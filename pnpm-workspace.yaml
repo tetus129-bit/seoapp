@@ -1,0 +1,14 @@
+packages:
+  - 'extensions/*'
+shamefullyHoist: true
+allowBuilds:
+  '@google/genai': false
+  '@parcel/watcher': true
+  '@prisma/client': true
+  '@prisma/engines': true
+  esbuild: true
+  prisma: true
+  protobufjs: false
+  unrs-resolver: true
+minimumReleaseAgeExclude:
+  - '@shopify/cli@4.7.1'
