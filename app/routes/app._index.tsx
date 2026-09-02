@@ -379,7 +379,7 @@ export default function CompleteSEOApp() {
       const formData = new FormData();
       Object.entries(body).forEach(([key, val]) => formData.append(key, val));
 
-      const res = await fetch("/api/seo", {
+      const res = await shopify.fetch("/api/seo", {
         method: "POST",
         body: formData,
       });

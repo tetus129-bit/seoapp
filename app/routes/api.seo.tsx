@@ -19,45 +19,29 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           `#graphql
             mutation updateProductSEO($input: ProductInput!) {
               productUpdate(input: $input) {
-                product { id }
                 userErrors { field message }
               }
             }
           `,
-          {
-            variables: {
-              input: {
-                id: resourceId,
-                seo: { title: seoTitle, description: seoDesc },
-              },
-            },
-          }
+          { variables: { input: { id: resourceId, seo: { title: seoTitle, description: seoDesc } } } }
         );
       } else if (resourceType === "collection") {
         await admin.graphql(
           `#graphql
             mutation updateCollectionSEO($input: CollectionInput!) {
               collectionUpdate(input: $input) {
-                collection { id }
                 userErrors { field message }
               }
             }
           `,
-          {
-            variables: {
-              input: {
-                id: resourceId,
-                seo: { title: seoTitle, description: seoDesc },
-              },
-            },
-          }
+          { variables: { input: { id: resourceId, seo: { title: seoTitle, description: seoDesc } } } }
         );
-      } else if (resourceType === "page") {
+      } else if (resourceType === "page" || resourceType === "article") {
+        // Se corrigió el tipo a "single_line_text_field" y se quitó el $id innecesario
         await admin.graphql(
           `#graphql
-            mutation updatePageSEO($id: ID!, $metafields: [MetafieldsSetInput!]!) {
+            mutation updateContentSEO($metafields: [MetafieldsSetInput!]!) {
               metafieldsSet(metafields: $metafields) {
-                metafields { id key value }
                 userErrors { field message }
               }
             }
@@ -65,51 +49,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           {
             variables: {
               metafields: [
-                {
-                  ownerId: resourceId,
-                  namespace: "global",
-                  key: "title_tag",
-                  value: seoTitle,
-                  type: "string",
-                },
-                {
-                  ownerId: resourceId,
-                  namespace: "global",
-                  key: "description_tag",
-                  value: seoDesc,
-                  type: "string",
-                },
-              ],
-            },
-          }
-        );
-      } else if (resourceType === "article") {
-        await admin.graphql(
-          `#graphql
-            mutation updateArticleSEO($id: ID!, $metafields: [MetafieldsSetInput!]!) {
-              metafieldsSet(metafields: $metafields) {
-                metafields { id key value }
-                userErrors { field message }
-              }
-            }
-          `,
-          {
-            variables: {
-              metafields: [
-                {
-                  ownerId: resourceId,
-                  namespace: "global",
-                  key: "title_tag",
-                  value: seoTitle,
-                  type: "string",
-                },
-                {
-                  ownerId: resourceId,
-                  namespace: "global",
-                  key: "description_tag",
-                  value: seoDesc,
-                  type: "string",
-                },
+                { ownerId: resourceId, namespace: "global", key: "title_tag", value: seoTitle, type: "single_line_text_field" },
+                { ownerId: resourceId, namespace: "global", key: "description_tag", value: seoDesc, type: "single_line_text_field" },
               ],
             },
           }
@@ -129,22 +70,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         `#graphql
           mutation setSEOHiddenMetafield($metafields: [MetafieldsSetInput!]!) {
             metafieldsSet(metafields: $metafields) {
-              metafields { id value }
               userErrors { field message }
             }
           }
         `,
         {
           variables: {
-            metafields: [
-              {
-                ownerId: resourceId,
-                namespace: "seo",
-                key: "hidden",
-                value: value,
-                type: "number_integer",
-              },
-            ],
+            metafields: [{ ownerId: resourceId, namespace: "seo", key: "hidden", value: value, type: "number_integer" }],
           },
         }
       );
@@ -155,7 +87,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       });
     }
 
-    // 3. Optimización masiva de ALT
+    // 3. Optimización masiva de ALT (Tu lógica original intacta)
     if (intent === "bulk_update_alt_texts") {
       const altTemplate = (formData.get("altTemplate") as string) || "{{title}}";
       const shopName = (formData.get("shopName") as string) || "Tienda";
@@ -172,9 +104,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
                     nodes {
                       ... on MediaImage {
                         id
-                        image {
-                          altText
-                        }
+                        image { altText }
                       }
                     }
                   }
@@ -208,12 +138,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
                 }
               }
             `,
-            {
-              variables: {
-                productId: prod.id,
-                media: mediaUpdates,
-              },
-            }
+            { variables: { productId: prod.id, media: mediaUpdates } }
           );
         }
       }
