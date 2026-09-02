@@ -14,6 +14,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   let collections: any[] = [];
   let pages: any[] = [];
   let articles: any[] = [];
+  let apiErrors: string[] = []; // NUEVO: Capturador de errores de Shopify
   
   try {
     const mainResponse = await admin.graphql(
@@ -30,6 +31,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       `
     );
     const mainJson = await mainResponse.json();
+    
+    if (mainJson.errors) apiErrors.push("Error en Productos: " + mainJson.errors.map((e: any) => e.message).join(", "));
     
     if (mainJson.data?.shop) shop = mainJson.data.shop;
     
@@ -68,13 +71,16 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         return { id: node.id, numericId: node.id.split("/").pop(), title: node.title, handle: node.handle, seoTitle, seoDesc, isHidden, score, issues };
       });
     }
-  } catch (err) {}
+  } catch (err: any) { apiErrors.push("Conexión Productos: " + (err.message || String(err))); }
 
   try {
     const pagesResponse = await admin.graphql(
       ` query getPagesSEO { pages(first: 50) { edges { node { id title handle bodySummary seoTitleTag: metafield(namespace: "global", key: "title_tag") { value } seoDescTag: metafield(namespace: "global", key: "description_tag") { value } metafield(namespace: "seo", key: "hidden") { id value } } } } }`
     );
     const pagesJson = await pagesResponse.json();
+    
+    if (pagesJson.errors) apiErrors.push("Error Permisos de Páginas: " + pagesJson.errors.map((e: any) => e.message).join(", "));
+    
     if (pagesJson.data?.pages?.edges) {
       pages = pagesJson.data.pages.edges.map((e: any) => {
         const node = e.node;
@@ -90,13 +96,16 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         return { id: node.id, numericId: node.id.split("/").pop(), title: node.title, handle: node.handle, seoTitle, seoDesc, isHidden, score, issues };
       });
     }
-  } catch (err) {}
+  } catch (err: any) { apiErrors.push("Conexión Páginas: " + (err.message || String(err))); }
 
   try {
     const blogsResponse = await admin.graphql(
       ` query getBlogsSEO { blogs(first: 10) { edges { node { id title handle articles(first: 50) { edges { node { id title handle summary author { name } image { url altText } seoTitleTag: metafield(namespace: "global", key: "title_tag") { value } seoDescTag: metafield(namespace: "global", key: "description_tag") { value } metafield(namespace: "seo", key: "hidden") { id value } } } } } } } }`
     );
     const blogsJson = await blogsResponse.json();
+    
+    if (blogsJson.errors) apiErrors.push("Error Permisos de Blog: " + blogsJson.errors.map((e: any) => e.message).join(", "));
+    
     if (blogsJson.data?.blogs?.edges) {
       blogsJson.data.blogs.edges.forEach((blogEdge: any) => {
         const blogNode = blogEdge.node;
@@ -118,12 +127,12 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         });
       });
     }
-  } catch (err) {}
+  } catch (err: any) { apiErrors.push("Conexión Blog: " + (err.message || String(err))); }
 
   const allScores = [...products.map((p) => p.score), ...collections.map((c) => c.score), ...pages.map((pg) => pg.score), ...articles.map((a) => a.score)];
   const totalScore = allScores.length > 0 ? Math.round(allScores.reduce((acc, curr) => acc + curr, 0) / allScores.length) : 100;
 
-  return { shop, products, collections, pages, articles, totalScore };
+  return { shop, products, collections, pages, articles, totalScore, apiErrors };
 };
 
 // ==========================================
@@ -216,9 +225,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 // 3. INTERFAZ DE USUARIO
 // ==========================================
 export default function CompleteSEOApp() {
-  const { shop, products, collections, pages, articles, totalScore } = useLoaderData<typeof loader>();
+  const { shop, products, collections, pages, articles, totalScore, apiErrors } = useLoaderData<typeof loader>();
   
-  // Usamos fetcher apuntando AL MISMO ARCHIVO. Sin enredos de rutas.
   const fetcher = useFetcher<any>();
   const isSubmitting = fetcher.state !== "idle";
 
@@ -241,7 +249,6 @@ export default function CompleteSEOApp() {
   const [previewDevice, setPreviewDevice] = useState<"desktop" | "mobile">("desktop");
   const [altTemplate, setAltTemplate] = useState("{{title}} - {{shop}}");
 
-  // AHORA LLAMA A SÍ MISMO
   const executeApiCall = (body: Record<string, string>) => {
     fetcher.submit(body, { method: "POST" });
   };
@@ -304,6 +311,25 @@ export default function CompleteSEOApp() {
         </s-card>
       </div>
 
+      {/* NUEVO BANNER DE ERRORES DE PERMISOS */}
+      {apiErrors && apiErrors.length > 0 && (
+        <div style={{ padding: "16px", backgroundColor: "#ffe4e5", borderLeft: "4px solid #d82c0d", borderRadius: "4px", marginBottom: "20px" }}>
+          <h3 style={{ margin: "0 0 8px 0", color: "#d82c0d", fontSize: "14px" }}>⚠️ Error de Permisos en Shopify</h3>
+          <p style={{ margin: "0 0 8px 0", color: "#d82c0d", fontSize: "13px" }}>Shopify ha bloqueado el acceso a la lectura de ciertos datos (por ejemplo, Páginas o Blogs). Para solucionarlo:</p>
+          <ol style={{ margin: "0 0 12px 0", color: "#d82c0d", fontSize: "13px", paddingLeft: "24px" }}>
+            <li>Abre tu archivo <b>shopify.app.toml</b></li>
+            <li>Asegúrate de tener estos scopes: <br/><code>scopes = "write_products,read_online_store_pages,write_online_store_pages,read_content,write_content,write_metaobjects,write_metaobject_definitions"</code></li>
+            <li>Detén la terminal del servidor y vuelve a correr <b>npm run dev</b></li>
+          </ol>
+          <details>
+            <summary style={{ cursor: "pointer", color: "#d82c0d", fontSize: "12px", fontWeight: "600" }}>Ver detalles técnicos del error</summary>
+            <ul style={{ margin: "8px 0 0 0", color: "#d82c0d", fontSize: "12px", paddingLeft: "20px" }}>
+              {apiErrors.map((err, i) => <li key={i}>{err}</li>)}
+            </ul>
+          </details>
+        </div>
+      )}
+
       {feedback && (
         <div style={{ padding: "12px 16px", backgroundColor: feedback.type === "success" ? "#e3f1df" : "#ffe4e5", borderLeft: `4px solid ${feedback.type === "success" ? "#108043" : "#d82c0d"}`, borderRadius: "4px", marginBottom: "20px" }}>
           <span style={{ color: feedback.type === "success" ? "#108043" : "#d82c0d", fontWeight: "600", fontSize: "14px" }}>{feedback.message}</span>
@@ -311,11 +337,18 @@ export default function CompleteSEOApp() {
       )}
 
       {/* Navegación por Pestañas */}
-      <div style={{ display: "flex", gap: "10px", marginBottom: "20px", borderBottom: "1px solid #e1e3e5", paddingBottom: "10px" }}>
+      <div style={{ display: "flex", gap: "10px", marginBottom: "20px", borderBottom: "1px solid #e1e3e5", paddingBottom: "10px", overflowX: "auto" }}>
         {["products", "collections", "pages", "blogs", "images", "guide"].map((tab) => {
-          const labels: Record<string, string> = { products: "📦 Productos", collections: "📂 Colecciones", pages: "📄 Páginas", blogs: "📝 Blog", images: "🖼️ Imágenes (ALT)", guide: "📚 Guía SEO" };
+          const labels: Record<string, string> = { 
+            products: `📦 Productos (${products.length})`, 
+            collections: `📂 Colecciones (${collections.length})`, 
+            pages: `📄 Páginas (${pages.length})`, 
+            blogs: `📝 Blog (${articles.length})`, 
+            images: "🖼️ Imágenes (ALT)", 
+            guide: "📚 Guía SEO" 
+          };
           return (
-            <button key={tab} onClick={() => setActiveTab(tab as any)} style={{ padding: "8px 16px", borderRadius: "8px", border: "none", backgroundColor: activeTab === tab ? "#e1e3e5" : "transparent", fontWeight: activeTab === tab ? "600" : "400", cursor: "pointer", fontSize: "14px", color: "#202223" }}>
+            <button key={tab} onClick={() => setActiveTab(tab as any)} style={{ padding: "8px 16px", borderRadius: "8px", border: "none", backgroundColor: activeTab === tab ? "#e1e3e5" : "transparent", fontWeight: activeTab === tab ? "600" : "400", cursor: "pointer", fontSize: "14px", color: "#202223", whiteSpace: "nowrap" }}>
               {labels[tab]}
             </button>
           );
@@ -343,11 +376,13 @@ export default function CompleteSEOApp() {
                   <tr key={prod.id} style={{ borderBottom: "1px solid #f1f2f4" }}>
                     <td style={{ padding: "12px 16px" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                        <div style={{ width: "40px", height: "40px", backgroundColor: "#f6f6f7", borderRadius: "4px", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <div style={{ width: "40px", height: "40px", backgroundColor: "#f6f6f7", borderRadius: "4px", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                           {prod.imageUrl ? <img src={prod.imageUrl} alt={prod.imageAlt || "Producto"} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ color: "#8c9196", fontSize: "12px" }}>Sin img</span>}
                         </div>
                         <div>
                           <div style={{ fontWeight: "600", fontSize: "14px", marginBottom: "4px" }}>{prod.title}</div>
+                          <div style={{ fontSize: "12px", marginBottom: "2px" }}><a href={`https://${shop.myshopifyDomain}/products/${prod.handle}`} target="_blank" rel="noopener noreferrer" style={{ color: "#2c6ecb", textDecoration: "none" }}>/products/{prod.handle}</a></div>
+                          <div style={{ fontSize: "11px", color: "#8c9196", marginBottom: "6px" }}>ID: {prod.numericId}</div>
                           {renderProductStatus(prod.status)}
                         </div>
                       </div>
@@ -394,7 +429,11 @@ export default function CompleteSEOApp() {
               ) : (
                 collections.map((col) => (
                   <tr key={col.id} style={{ borderBottom: "1px solid #f1f2f4" }}>
-                    <td style={{ padding: "12px 16px", fontWeight: "600", fontSize: "14px" }}>{col.title}</td>
+                    <td style={{ padding: "12px 16px" }}>
+                      <div style={{ fontWeight: "600", fontSize: "14px", marginBottom: "4px" }}>{col.title}</div>
+                      <div style={{ fontSize: "12px", marginBottom: "2px" }}><a href={`https://${shop.myshopifyDomain}/collections/${col.handle}`} target="_blank" rel="noopener noreferrer" style={{ color: "#2c6ecb", textDecoration: "none" }}>/collections/{col.handle}</a></div>
+                      <div style={{ fontSize: "11px", color: "#8c9196" }}>ID: {col.numericId}</div>
+                    </td>
                     <td style={{ padding: "12px 16px" }}><span style={{ padding: "3px 8px", borderRadius: "10px", fontSize: "12px", fontWeight: "600", color: getScoreColor(col.score), backgroundColor: "#f6f6f7" }}>{col.score} / 100</span></td>
                     <td style={{ padding: "12px 16px" }}>{col.issues.length === 0 ? <span style={{ color: "#108043", fontSize: "13px" }}>✓ Optimizado</span> : col.issues.map((issue: string, idx: number) => <div key={idx} style={{ color: "#d82c0d", fontSize: "12px" }}>• {issue}</div>)}</td>
                     <td style={{ padding: "12px 16px" }}><span style={{ padding: "3px 8px", borderRadius: "10px", fontSize: "12px", backgroundColor: col.isHidden ? "#fef3d6" : "#e3f1df", color: col.isHidden ? "#8a6100" : "#108043" }}>{col.isHidden ? "Oculto (noindex)" : "En Sitemap"}</span></td>
@@ -429,7 +468,11 @@ export default function CompleteSEOApp() {
               ) : (
                 pages.map((pg) => (
                   <tr key={pg.id} style={{ borderBottom: "1px solid #f1f2f4" }}>
-                    <td style={{ padding: "12px 16px", fontWeight: "600", fontSize: "14px" }}>{pg.title}</td>
+                    <td style={{ padding: "12px 16px" }}>
+                      <div style={{ fontWeight: "600", fontSize: "14px", marginBottom: "4px" }}>{pg.title}</div>
+                      <div style={{ fontSize: "12px", marginBottom: "2px" }}><a href={`https://${shop.myshopifyDomain}/pages/${pg.handle}`} target="_blank" rel="noopener noreferrer" style={{ color: "#2c6ecb", textDecoration: "none" }}>/pages/{pg.handle}</a></div>
+                      <div style={{ fontSize: "11px", color: "#8c9196" }}>ID: {pg.numericId}</div>
+                    </td>
                     <td style={{ padding: "12px 16px" }}><span style={{ padding: "3px 8px", borderRadius: "10px", fontSize: "12px", fontWeight: "600", color: getScoreColor(pg.score), backgroundColor: "#f6f6f7" }}>{pg.score} / 100</span></td>
                     <td style={{ padding: "12px 16px" }}>{pg.issues.length === 0 ? <span style={{ color: "#108043", fontSize: "13px" }}>✓ Optimizado</span> : pg.issues.map((issue: string, idx: number) => <div key={idx} style={{ color: "#d82c0d", fontSize: "12px" }}>• {issue}</div>)}</td>
                     <td style={{ padding: "12px 16px" }}><span style={{ padding: "3px 8px", borderRadius: "10px", fontSize: "12px", backgroundColor: pg.isHidden ? "#fef3d6" : "#e3f1df", color: pg.isHidden ? "#8a6100" : "#108043" }}>{pg.isHidden ? "Oculto (noindex)" : "En Sitemap"}</span></td>
@@ -465,7 +508,12 @@ export default function CompleteSEOApp() {
               ) : (
                 articles.map((art) => (
                   <tr key={art.id} style={{ borderBottom: "1px solid #f1f2f4" }}>
-                    <td style={{ padding: "12px 16px", fontWeight: "600", fontSize: "14px" }}>{art.title} <div style={{ fontSize: "12px", color: "#6d7175", fontWeight: "normal" }}>Por {art.authorName}</div></td>
+                    <td style={{ padding: "12px 16px" }}>
+                      <div style={{ fontWeight: "600", fontSize: "14px", marginBottom: "4px" }}>{art.title}</div>
+                      <div style={{ fontSize: "12px", color: "#6d7175", marginBottom: "2px" }}>Por {art.authorName}</div>
+                      <div style={{ fontSize: "12px", marginBottom: "2px" }}><a href={`https://${shop.myshopifyDomain}/blogs/${art.blogHandle}/${art.handle}`} target="_blank" rel="noopener noreferrer" style={{ color: "#2c6ecb", textDecoration: "none" }}>/blogs/{art.blogHandle}/{art.handle}</a></div>
+                      <div style={{ fontSize: "11px", color: "#8c9196" }}>ID: {art.numericId}</div>
+                    </td>
                     <td style={{ padding: "12px 16px" }}><span style={{ padding: "3px 8px", backgroundColor: "#f1f2f4", borderRadius: "10px", fontSize: "12px", fontWeight: "600" }}>{art.blogTitle}</span></td>
                     <td style={{ padding: "12px 16px" }}><span style={{ padding: "3px 8px", borderRadius: "10px", fontSize: "12px", fontWeight: "600", color: getScoreColor(art.score), backgroundColor: "#f6f6f7" }}>{art.score} / 100</span></td>
                     <td style={{ padding: "12px 16px" }}>{art.issues.length === 0 ? <span style={{ color: "#108043", fontSize: "13px" }}>✓ Optimizado</span> : art.issues.map((issue: string, idx: number) => <div key={idx} style={{ color: "#d82c0d", fontSize: "12px" }}>• {issue}</div>)}</td>
