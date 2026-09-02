@@ -14,7 +14,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   let collections: any[] = [];
   let pages: any[] = [];
   let articles: any[] = [];
-  let apiErrors: string[] = []; // NUEVO: Capturador de errores de Shopify
+  let imagesWithoutAlt: any[] = []; 
+  let apiErrors: string[] = []; 
   
   try {
     const mainResponse = await admin.graphql(
@@ -39,7 +40,21 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     if (mainJson.data?.products?.edges) {
       products = mainJson.data.products.edges.map((e: any) => {
         const node = e.node;
-        const hasAlt = node.media?.nodes?.some((m: any) => m.image?.altText && m.image.altText.trim() !== "");
+        const mediaNodes = node.media?.nodes || [];
+        const hasAlt = mediaNodes.some((m: any) => m.image?.altText && m.image.altText.trim() !== "");
+        
+        mediaNodes.forEach((m: any) => {
+          if (m.image && (!m.image.altText || m.image.altText.trim() === "")) {
+            imagesWithoutAlt.push({
+              mediaId: m.id,
+              url: m.image.url,
+              productId: node.id,
+              productTitle: node.title,
+              productHandle: node.handle
+            });
+          }
+        });
+
         const seoTitle = node.seo?.title || node.title;
         const seoDesc = node.seo?.description || (node.description ? node.description.slice(0, 160) : "");
         const isHidden = node.metafield?.value === "1";
@@ -129,14 +144,19 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     }
   } catch (err: any) { apiErrors.push("Conexión Blog: " + (err.message || String(err))); }
 
-  const allScores = [...products.map((p) => p.score), ...collections.map((c) => c.score), ...pages.map((pg) => pg.score), ...articles.map((a) => a.score)];
+  const allScores = [
+    ...products.filter((p) => !p.isHidden).map((p) => p.score),
+    ...collections.filter((c) => !c.isHidden).map((c) => c.score),
+    ...pages.filter((pg) => !pg.isHidden).map((pg) => pg.score),
+    ...articles.filter((a) => !a.isHidden).map((a) => a.score)
+  ];
   const totalScore = allScores.length > 0 ? Math.round(allScores.reduce((acc, curr) => acc + curr, 0) / allScores.length) : 100;
 
-  return { shop, products, collections, pages, articles, totalScore, apiErrors };
+  return { shop, products, collections, pages, articles, totalScore, apiErrors, imagesWithoutAlt };
 };
 
 // ==========================================
-// 2. ACCIONES (ACTION) - Escribir en Shopify (El backend unificado)
+// 2. ACCIONES (ACTION) - Escribir en Shopify
 // ==========================================
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { admin } = await authenticate.admin(request);
@@ -184,34 +204,27 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       return { success: true, message: hideAction === "hide" ? "Recurso excluido del Sitemap e indexación (noindex)." : "Recurso incluido en el Sitemap." };
     }
 
-    if (intent === "bulk_update_alt_texts") {
-      const altTemplate = (formData.get("altTemplate") as string) || "{{title}}";
-      const shopName = (formData.get("shopName") as string) || "Tienda";
+    if (intent === "update_single_alt_text") {
+      const productId = formData.get("productId") as string;
+      const mediaId = formData.get("mediaId") as string;
+      const altText = formData.get("altText") as string;
 
-      const productsQuery = await admin.graphql(
-        ` query getMissingAltImages { products(first: 25) { edges { node { id title media(first: 10) { nodes { ... on MediaImage { id image { altText } } } } } } } } }`
-      );
-
-      const productsData = await productsQuery.json();
-      const products = productsData.data?.products?.edges || [];
-
-      for (const edge of products) {
-        const prod = edge.node;
-        const mediaNodes = prod.media?.nodes || [];
-        const missingAltNodes = mediaNodes.filter((m: any) => !m.image?.altText || m.image.altText.trim() === "");
+      try {
+        const response = await admin.graphql(
+          `mutation updateMediaAlt($media: [UpdateMediaInput!]!, $productId: ID!) { productUpdateMedia(media: $media, productId: $productId) { mediaUserErrors { field message } } }`,
+          { variables: { productId, media: [{ id: mediaId, alt: altText }] } }
+        );
         
-        if (missingAltNodes.length > 0) {
-          const generatedAlt = altTemplate.replace("{{title}}", prod.title).replace("{{shop}}", shopName);
-          const mediaUpdates = missingAltNodes.map((m: any) => ({ id: m.id, alt: generatedAlt }));
-
-          await admin.graphql(
-            ` mutation updateMediaAlt($media: [UpdateMediaInput!]!, $productId: ID!) { productUpdateMedia(media: $media, productId: $productId) { mediaUserErrors { field message } } }`,
-            { variables: { productId: prod.id, media: mediaUpdates } }
-          );
+        const result = await response.json();
+        
+        if (result.data?.productUpdateMedia?.mediaUserErrors?.length > 0) {
+          return { error: result.data.productUpdateMedia.mediaUserErrors[0].message };
         }
+        
+        return { success: true, message: "Alt guardado exitosamente." };
+      } catch (e: any) {
+        return { error: "Error de red al guardar el texto alternativo." };
       }
-
-      return { success: true, message: "Textos alternativos (ALT) actualizados con éxito." };
     }
 
     return { error: "Intención no válida." };
@@ -222,17 +235,128 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 // ==========================================
-// 3. INTERFAZ DE USUARIO
+// 3. DICCIONARIOS DE TRADUCCIÓN
+// ==========================================
+const dict = {
+  es: {
+    greeting: "Hola,",
+    summary: "Aquí tienes un resumen del estado de optimización para buscadores (SEO) de tu tienda. Corrige los problemas marcados en rojo para mejorar tu posicionamiento en Google.",
+    globalHealth: "Salud SEO Global",
+    permErrorTitle: "⚠️ Error de Permisos en Shopify",
+    permErrorDesc: "Shopify ha bloqueado el acceso a la lectura de ciertos datos (por ejemplo, Páginas o Blogs). Para solucionarlo:",
+    permError1: "Abre tu archivo shopify.app.toml",
+    permError2: "Asegúrate de tener estos scopes:",
+    permError3: "Detén la terminal del servidor y vuelve a correr npm run dev",
+    permErrorDetails: "Ver detalles técnicos del error",
+    tabs: { products: "📦 Productos", collections: "📂 Colecciones", pages: "📄 Páginas", blogs: "📝 Blog", images: "🖼️ Imágenes (ALT)", guide: "📚 Guía SEO" },
+    tables: { product: "Producto", collection: "Colección", page: "Página", article: "Artículo", blog: "Blog", imageProduct: "Imagen y Producto", altText: "Texto Alternativo (ALT)", score: "Puntuación", issues: "Problemas Detectados", indexing: "Indexación", actions: "Acciones" },
+    empty: { products: "No hay productos disponibles.", collections: "No hay colecciones disponibles.", pages: "No hay páginas disponibles.", articles: "No hay artículos disponibles.", images: "¡Genial! Todas tus imágenes ya tienen textos alternativos." },
+    misc: { noImg: "Sin img", by: "Por", viewOriginal: "Ver producto original ↗", altPlaceholder: "Ej: Zapatillas deportivas rojas talla 42...", saving: "Guardando...", saveAlt: "💾 Guardar ALT", active: "● Activo", draft: "○ Borrador", archived: "📦 Archivado", optimized: "✓ Optimizado", hidden: "Oculto (noindex)", inSitemap: "En Sitemap", editSeo: "✏️ Editar SEO", include: "Incluir", exclude: "Excluir", lang: "🌐 Idioma:" },
+    guide: { goldenTitle: "Regla de Oro del SEO", goldenDesc: "Evita títulos genéricos. Utiliza siempre: [Producto] + [Material] + [Beneficio o Marca].", howTo: "📖 Cómo utilizar esta aplicación", scoreTitle: "🎯 Puntuación SEO (0 a 100)", scoreDesc: "La aplicación analiza automáticamente tus títulos y descripciones SEO. Penaliza títulos que sean muy cortos (<30 caracteres) o demasiado largos (>60 caracteres), así como las descripciones muy breves (<70) o muy largas (>160). Además, reduce la puntuación si detecta imágenes que carecen de un texto alternativo (ALT).", editTitle: "✏️ Edición Rápida con Vista Previa", editDesc: "Al presionar el botón \"Editar SEO\", se abrirá un panel donde puedes modificar el Título y la Meta Descripción de cualquier producto, colección, página o artículo de blog. Mientras escribes, verás una simulación en tiempo real de cómo aparecería tu resultado en las búsquedas de Google, tanto en la versión móvil como en la versión de escritorio.", indexTitle: "👁️ Control de Indexación (Ocultar del Sitemap)", indexDesc: "Si tienes productos o páginas que no quieres que aparezcan en Google (por ejemplo, páginas de agradecimiento o productos exclusivos), puedes utilizar el botón \"Excluir\". Esto agrega una regla (metafield seo.hidden) que le indica a Shopify que elimine ese recurso de tu archivo sitemap.xml y agregue la etiqueta noindex para que los buscadores lo ignoren.", imgTitle: "🖼️ Optimización de Imágenes (ALT)", imgDesc: "En la pestaña \"Imágenes (ALT)\", la app filtra y te muestra únicamente las fotografías de tus productos que actualmente no tienen ningún texto alternativo. Podrás ver una pequeña miniatura de la imagen y escribir rápidamente su descripción. Al guardarlo, la imagen desaparecerá de la lista, ayudándote a mejorar tu posicionamiento en Google Imágenes.", contactTitle: "✉️ Contacto y Soporte", contact1: "Esta aplicación fue creada por Alejandro Eguía, trabajando en SEO desde 2006. Experto de Producto de Google desde 2013 en foro para Webmasters (", contactLink: "Ver credencial oficial", contact2: ").", contact3: "Si necesitas ayuda con la App o deseas agregar alguna funcionalidad, no dudes en contactarme:" },
+    modal: { editSeo: "Editar SEO:", seoTitle: "Título SEO", metaDesc: "Meta Descripción", preview: "Vista Previa en Google:", desktop: "🖥️ Escritorio", mobile: "📱 Móvil", addDesc: "Agrega una meta descripción para ver cómo aparecerá este resultado...", cancel: "Cancelar", save: "💾 Guardar en Shopify" },
+    feedback: {
+      "Metadatos SEO guardados correctamente en Shopify.": "Metadatos SEO guardados correctamente en Shopify.",
+      "Recurso excluido del Sitemap e indexación (noindex).": "Recurso excluido del Sitemap e indexación (noindex).",
+      "Recurso incluido en el Sitemap.": "Recurso incluido en el Sitemap.",
+      "Alt guardado exitosamente.": "Alt guardado exitosamente.",
+      "Error de red al guardar el texto alternativo.": "Error de red al guardar el texto alternativo.",
+      "Intención no válida.": "Intención no válida."
+    },
+    backendIssues: {
+      "Título corto (<30)": "Título corto (<30)",
+      "Título largo (>60)": "Título largo (>60)",
+      "Sin meta descripción": "Sin meta descripción",
+      "Meta descripción fuera de rango": "Meta descripción fuera de rango",
+      "Imágenes sin texto ALT": "Imágenes sin texto ALT",
+      "Imagen destacada sin texto ALT": "Imagen destacada sin texto ALT"
+    }
+  },
+  en: {
+    greeting: "Hello,",
+    summary: "Here is a summary of your store's Search Engine Optimization (SEO) status. Fix the issues marked in red to improve your Google ranking.",
+    globalHealth: "Global SEO Health",
+    permErrorTitle: "⚠️ Shopify Permissions Error",
+    permErrorDesc: "Shopify has blocked read access to certain data (e.g., Pages or Blogs). To fix this:",
+    permError1: "Open your shopify.app.toml file",
+    permError2: "Make sure you have these scopes:",
+    permError3: "Stop the server terminal and run npm run dev again",
+    permErrorDetails: "View technical error details",
+    tabs: { products: "📦 Products", collections: "📂 Collections", pages: "📄 Pages", blogs: "📝 Blog", images: "🖼️ Images (ALT)", guide: "📚 SEO Guide" },
+    tables: { product: "Product", collection: "Collection", page: "Page", article: "Article", blog: "Blog", imageProduct: "Image and Product", altText: "Alternative Text (ALT)", score: "Score", issues: "Detected Issues", indexing: "Indexing", actions: "Actions" },
+    empty: { products: "No products available.", collections: "No collections available.", pages: "No pages available.", articles: "No articles available.", images: "Great! All your images already have alternative texts." },
+    misc: { noImg: "No img", by: "By", viewOriginal: "View original product ↗", altPlaceholder: "E.g: Red sports shoes size 42...", saving: "Saving...", saveAlt: "💾 Save ALT", active: "● Active", draft: "○ Draft", archived: "📦 Archived", optimized: "✓ Optimized", hidden: "Hidden (noindex)", inSitemap: "In Sitemap", editSeo: "✏️ Edit SEO", include: "Include", exclude: "Exclude", lang: "🌐 Language:" },
+    guide: { goldenTitle: "Golden Rule of SEO", goldenDesc: "Avoid generic titles. Always use: [Product] + [Material] + [Benefit or Brand].", howTo: "📖 How to use this application", scoreTitle: "🎯 SEO Score (0 to 100)", scoreDesc: "The application automatically analyzes your SEO titles and descriptions. It penalizes titles that are too short (<30 characters) or too long (>60 characters), as well as descriptions that are very short (<70) or very long (>160). In addition, it reduces the score if it detects images lacking alternative text (ALT).", editTitle: "✏️ Quick Editing with Preview", editDesc: "By pressing the \"Edit SEO\" button, a panel will open where you can modify the Title and Meta Description of any product, collection, page, or blog article. As you type, you will see a real-time simulation of how your result would appear in Google searches, on both mobile and desktop versions.", indexTitle: "👁️ Indexing Control (Hide from Sitemap)", indexDesc: "If you have products or pages that you do not want to appear on Google (e.g., thank you pages or exclusive products), you can use the \"Exclude\" button. This adds a rule (seo.hidden metafield) that tells Shopify to remove that resource from your sitemap.xml file and adds the noindex tag so search engines ignore it.", imgTitle: "🖼️ Image Optimization (ALT)", imgDesc: "In the \"Images (ALT)\" tab, the app filters and shows you only the product photos that currently have no alternative text. You can see a small thumbnail of the image and quickly write its description. Upon saving, the image will disappear from the list, helping you improve your ranking in Google Images.", contactTitle: "✉️ Contact and Support", contact1: "This application was created by Alejandro Eguía, working in SEO since 2006. Google Product Expert since 2013 in the Webmaster forum (", contactLink: "View official credential", contact2: ").", contact3: "If you need help with the App or wish to add any functionality, do not hesitate to contact me:" },
+    modal: { editSeo: "Edit SEO:", seoTitle: "SEO Title", metaDesc: "Meta Description", preview: "Google Preview:", desktop: "🖥️ Desktop", mobile: "📱 Mobile", addDesc: "Add a meta description to see how this result will appear...", cancel: "Cancel", save: "💾 Save to Shopify" },
+    feedback: {
+      "Metadatos SEO guardados correctamente en Shopify.": "SEO metadata successfully saved in Shopify.",
+      "Recurso excluido del Sitemap e indexación (noindex).": "Resource excluded from Sitemap and indexing (noindex).",
+      "Recurso incluido en el Sitemap.": "Resource included in the Sitemap.",
+      "Alt guardado exitosamente.": "Alt saved successfully.",
+      "Error de red al guardar el texto alternativo.": "Network error while saving alternative text.",
+      "Intención no válida.": "Invalid intent."
+    },
+    backendIssues: {
+      "Título corto (<30)": "Short title (<30)",
+      "Título largo (>60)": "Long title (>60)",
+      "Sin meta descripción": "Missing meta description",
+      "Meta descripción fuera de rango": "Meta description out of range",
+      "Imágenes sin texto ALT": "Images missing ALT text",
+      "Imagen destacada sin texto ALT": "Featured image missing ALT text"
+    }
+  },
+  pt: {
+    greeting: "Olá,",
+    summary: "Aqui está um resumo do status de Otimização de Mecanismos de Busca (SEO) da sua loja. Corrija os problemas marcados em vermelho para melhorar sua classificação no Google.",
+    globalHealth: "Saúde SEO Global",
+    permErrorTitle: "⚠️ Erro de Permissões no Shopify",
+    permErrorDesc: "O Shopify bloqueou o acesso de leitura a determinados dados (por exemplo, Páginas ou Blogs). Para corrigir isso:",
+    permError1: "Abra o seu arquivo shopify.app.toml",
+    permError2: "Certifique-se de ter esses escopos:",
+    permError3: "Pare o terminal do servidor e execute npm run dev novamente",
+    permErrorDetails: "Ver detalhes técnicos do erro",
+    tabs: { products: "📦 Produtos", collections: "📂 Coleções", pages: "📄 Páginas", blogs: "📝 Blog", images: "🖼️ Imagens (ALT)", guide: "📚 Guia SEO" },
+    tables: { product: "Produto", collection: "Coleção", page: "Página", article: "Artigo", blog: "Blog", imageProduct: "Imagem e Produto", altText: "Texto Alternativo (ALT)", score: "Pontuação", issues: "Problemas Detectados", indexing: "Indexação", actions: "Ações" },
+    empty: { products: "Nenhum produto disponível.", collections: "Nenhuma coleção disponível.", pages: "Nenhuma página disponível.", articles: "Nenhum artigo disponível.", images: "Ótimo! Todas as suas imagens já têm textos alternativos." },
+    misc: { noImg: "Sem img", by: "Por", viewOriginal: "Ver produto original ↗", altPlaceholder: "Ex: Tênis esportivo vermelho tamanho 42...", saving: "Salvando...", saveAlt: "💾 Salvar ALT", active: "● Ativo", draft: "○ Rascunho", archived: "📦 Arquivado", optimized: "✓ Otimizado", hidden: "Oculto (noindex)", inSitemap: "No Sitemap", editSeo: "✏️ Editar SEO", include: "Incluir", exclude: "Excluir", lang: "🌐 Idioma:" },
+    guide: { goldenTitle: "Regra de Ouro do SEO", goldenDesc: "Evite títulos genéricos. Use sempre: [Produto] + [Material] + [Benefício ou Marca].", howTo: "📖 Como usar este aplicativo", scoreTitle: "🎯 Pontuação SEO (0 a 100)", scoreDesc: "O aplicativo analisa automaticamente seus títulos e descrições SEO. Ele penaliza títulos muito curtos (<30 caracteres) ou muito longos (>60 caracteres), bem como descrições muito curtas (<70) ou muito longas (>160). Além disso, reduz a pontuação se detectar imagens sem texto alternativo (ALT).", editTitle: "✏️ Edição Rápida com Visualização", editDesc: "Ao pressionar o botão \"Editar SEO\", será aberto um painel onde você poderá modificar o Título e a Meta Descrição de qualquer produto, coleção, página ou artigo de blog. Enquanto digita, você verá uma simulação em tempo real de como o seu resultado apareceria nas pesquisas do Google, nas versões mobile e desktop.", indexTitle: "👁️ Controle de Indexação (Ocultar do Sitemap)", indexDesc: "Se você tem produtos ou páginas que não quer que apareçam no Google (por exemplo, páginas de agradecimento ou produtos exclusivos), você pode usar o botão \"Excluir\". Isso adiciona uma regra (metafield seo.hidden) que diz ao Shopify para remover esse recurso do seu arquivo sitemap.xml e adiciona a tag noindex para que os motores de busca o ignorem.", imgTitle: "🖼️ Otimização de Imagens (ALT)", imgDesc: "Na guia \"Imagens (ALT)\", o aplicativo filtra e mostra apenas as fotos dos produtos que atualmente não têm texto alternativo. Você pode ver uma pequena miniatura da imagem e escrever rapidamente sua descrição. Ao salvar, a imagem desaparecerá da lista, ajudando você a melhorar sua classificação no Google Imagens.", contactTitle: "✉️ Contato e Suporte", contact1: "Este aplicativo foi criado por Alejandro Eguía, trabalhando com SEO desde 2006. Especialista de Produto do Google desde 2013 no fórum para Webmasters (", contactLink: "Ver credencial oficial", contact2: ").", contact3: "Se precisar de ajuda com o Aplicativo ou quiser adicionar alguma funcionalidade, não hesite em me contatar:" },
+    modal: { editSeo: "Editar SEO:", seoTitle: "Título SEO", metaDesc: "Meta Descrição", preview: "Visualização no Google:", desktop: "🖥️ Desktop", mobile: "📱 Celular", addDesc: "Adicione uma meta descrição para ver como este resultado aparecerá...", cancel: "Cancelar", save: "💾 Salvar no Shopify" },
+    feedback: {
+      "Metadatos SEO guardados correctamente en Shopify.": "Metadados SEO salvos com sucesso no Shopify.",
+      "Recurso excluido del Sitemap e indexación (noindex).": "Recurso excluído do Sitemap e indexação (noindex).",
+      "Recurso incluido en el Sitemap.": "Recurso incluído no Sitemap.",
+      "Alt guardado exitosamente.": "Alt salvo com sucesso.",
+      "Error de red al guardar el texto alternativo.": "Erro de rede ao salvar texto alternativo.",
+      "Intención no válida.": "Intenção inválida."
+    },
+    backendIssues: {
+      "Título corto (<30)": "Título curto (<30)",
+      "Título largo (>60)": "Título longo (>60)",
+      "Sin meta descripción": "Sem meta descrição",
+      "Meta descripción fuera de rango": "Meta descrição fora do limite",
+      "Imágenes sin texto ALT": "Imagens sem texto ALT",
+      "Imagen destacada sin texto ALT": "Imagem destacada sem texto ALT"
+    }
+  }
+};
+
+// ==========================================
+// 4. INTERFAZ DE USUARIO
 // ==========================================
 export default function CompleteSEOApp() {
-  const { shop, products, collections, pages, articles, totalScore, apiErrors } = useLoaderData<typeof loader>();
+  const { shop, products, collections, pages, articles, totalScore, apiErrors, imagesWithoutAlt } = useLoaderData<typeof loader>();
   
   const fetcher = useFetcher<any>();
   const isSubmitting = fetcher.state !== "idle";
 
+  // ESTADO DE IDIOMA
+  const [lang, setLang] = useState<"es" | "en" | "pt">("es");
+  const t = dict[lang];
+
   const actionData = fetcher.data;
   const feedback = actionData 
-    ? (actionData.error ? { type: "critical" as const, message: actionData.error } : { type: "success" as const, message: actionData.message }) 
+    ? (actionData.error 
+        ? { type: "critical" as const, message: t.feedback[actionData.error as keyof typeof t.feedback] || actionData.error } 
+        : { type: "success" as const, message: t.feedback[actionData.message as keyof typeof t.feedback] || actionData.message }) 
     : null;
 
   const [activeTab, setActiveTab] = useState<"products" | "collections" | "pages" | "blogs" | "images" | "guide">("products");
@@ -247,7 +371,7 @@ export default function CompleteSEOApp() {
   } | null>(null);
 
   const [previewDevice, setPreviewDevice] = useState<"desktop" | "mobile">("desktop");
-  const [altTemplate, setAltTemplate] = useState("{{title}} - {{shop}}");
+  const [imageAlts, setImageAlts] = useState<Record<string, string>>({});
 
   const executeApiCall = (body: Record<string, string>) => {
     fetcher.submit(body, { method: "POST" });
@@ -267,8 +391,11 @@ export default function CompleteSEOApp() {
     executeApiCall({ intent: "toggle_sitemap", resourceId, hideAction: currentlyHidden ? "show" : "hide" });
   };
 
-  const handleBulkAltUpdate = () => {
-    executeApiCall({ intent: "bulk_update_alt_texts", altTemplate, shopName: shop.name });
+  const handleSaveSingleAlt = (e: React.MouseEvent, productId: string, mediaId: string) => {
+    e.preventDefault(); 
+    const altText = imageAlts[mediaId] || "";
+    if (!altText.trim()) return;
+    executeApiCall({ intent: "update_single_alt_text", productId, mediaId, altText });
   };
 
   const getScoreColor = (score: number) => {
@@ -279,9 +406,9 @@ export default function CompleteSEOApp() {
 
   const renderProductStatus = (status: string) => {
     switch (status) {
-      case "ACTIVE": return <span style={{ padding: "3px 8px", borderRadius: "10px", fontSize: "12px", fontWeight: "600", backgroundColor: "#e3f1df", color: "#108043" }}>● Activo</span>;
-      case "DRAFT": return <span style={{ padding: "3px 8px", borderRadius: "10px", fontSize: "12px", fontWeight: "600", backgroundColor: "#f6f6f7", color: "#5c5f62" }}>○ Borrador</span>;
-      case "ARCHIVED": return <span style={{ padding: "3px 8px", borderRadius: "10px", fontSize: "12px", fontWeight: "600", backgroundColor: "#fef3d6", color: "#8a6100" }}>📦 Archivado</span>;
+      case "ACTIVE": return <span style={{ padding: "3px 8px", borderRadius: "10px", fontSize: "12px", fontWeight: "600", backgroundColor: "#e3f1df", color: "#108043" }}>{t.misc.active}</span>;
+      case "DRAFT": return <span style={{ padding: "3px 8px", borderRadius: "10px", fontSize: "12px", fontWeight: "600", backgroundColor: "#f6f6f7", color: "#5c5f62" }}>{t.misc.draft}</span>;
+      case "ARCHIVED": return <span style={{ padding: "3px 8px", borderRadius: "10px", fontSize: "12px", fontWeight: "600", backgroundColor: "#fef3d6", color: "#8a6100" }}>{t.misc.archived}</span>;
       default: return <span>{status}</span>;
     }
   };
@@ -302,27 +429,42 @@ export default function CompleteSEOApp() {
       {/* Banner de bienvenida y Score */}
       <div style={{ display: "flex", gap: "20px", marginBottom: "20px" }}>
         <s-card style={{ flex: "2", padding: "20px", display: "flex", flexDirection: "column", justifyContent: "center" }}>
-          <h1 style={{ fontSize: "20px", fontWeight: "600", margin: "0 0 8px 0" }}>Hola, {shop.name} 👋</h1>
-          <p style={{ margin: 0, color: "#6d7175" }}>Aquí tienes un resumen del estado de optimización para buscadores (SEO) de tu tienda. Corrige los problemas marcados en rojo para mejorar tu posicionamiento en Google.</p>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
+            <h1 style={{ fontSize: "20px", fontWeight: "600", margin: 0 }}>{t.greeting} {shop.name} 👋</h1>
+            
+            {/* SELECTOR DE IDIOMA */}
+            <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+              <span style={{ fontSize: "13px", color: "#6d7175", fontWeight: "600" }}>{t.misc.lang}</span>
+              <select 
+                value={lang} 
+                onChange={(e) => setLang(e.target.value as "es" | "en" | "pt")}
+                style={{ padding: "4px 8px", borderRadius: "4px", border: "1px solid #c9cccf", fontSize: "13px", backgroundColor: "#fff", cursor: "pointer" }}
+              >
+                <option value="es">Español</option>
+                <option value="en">English</option>
+                <option value="pt">Português</option>
+              </select>
+            </div>
+          </div>
+          <p style={{ margin: 0, color: "#6d7175" }}>{t.summary}</p>
         </s-card>
         <s-card style={{ flex: "1", padding: "20px", textAlign: "center", backgroundColor: getScoreColor(totalScore) + "10", border: `1px solid ${getScoreColor(totalScore)}40` }}>
-          <h2 style={{ fontSize: "14px", fontWeight: "600", margin: "0 0 10px 0", color: "#303030" }}>Salud SEO Global</h2>
+          <h2 style={{ fontSize: "14px", fontWeight: "600", margin: "0 0 10px 0", color: "#303030" }}>{t.globalHealth}</h2>
           <div style={{ fontSize: "42px", fontWeight: "700", color: getScoreColor(totalScore), lineHeight: "1" }}>{totalScore}<span style={{ fontSize: "20px" }}>/100</span></div>
         </s-card>
       </div>
 
-      {/* NUEVO BANNER DE ERRORES DE PERMISOS */}
       {apiErrors && apiErrors.length > 0 && (
         <div style={{ padding: "16px", backgroundColor: "#ffe4e5", borderLeft: "4px solid #d82c0d", borderRadius: "4px", marginBottom: "20px" }}>
-          <h3 style={{ margin: "0 0 8px 0", color: "#d82c0d", fontSize: "14px" }}>⚠️ Error de Permisos en Shopify</h3>
-          <p style={{ margin: "0 0 8px 0", color: "#d82c0d", fontSize: "13px" }}>Shopify ha bloqueado el acceso a la lectura de ciertos datos (por ejemplo, Páginas o Blogs). Para solucionarlo:</p>
+          <h3 style={{ margin: "0 0 8px 0", color: "#d82c0d", fontSize: "14px" }}>{t.permErrorTitle}</h3>
+          <p style={{ margin: "0 0 8px 0", color: "#d82c0d", fontSize: "13px" }}>{t.permErrorDesc}</p>
           <ol style={{ margin: "0 0 12px 0", color: "#d82c0d", fontSize: "13px", paddingLeft: "24px" }}>
-            <li>Abre tu archivo <b>shopify.app.toml</b></li>
-            <li>Asegúrate de tener estos scopes: <br/><code>scopes = "write_products,read_online_store_pages,write_online_store_pages,read_content,write_content,write_metaobjects,write_metaobject_definitions"</code></li>
-            <li>Detén la terminal del servidor y vuelve a correr <b>npm run dev</b></li>
+            <li>{t.permError1}</li>
+            <li>{t.permError2} <br/><code>scopes = "write_products,read_online_store_pages,write_online_store_pages,read_content,write_content,write_metaobjects,write_metaobject_definitions"</code></li>
+            <li>{t.permError3}</li>
           </ol>
           <details>
-            <summary style={{ cursor: "pointer", color: "#d82c0d", fontSize: "12px", fontWeight: "600" }}>Ver detalles técnicos del error</summary>
+            <summary style={{ cursor: "pointer", color: "#d82c0d", fontSize: "12px", fontWeight: "600" }}>{t.permErrorDetails}</summary>
             <ul style={{ margin: "8px 0 0 0", color: "#d82c0d", fontSize: "12px", paddingLeft: "20px" }}>
               {apiErrors.map((err, i) => <li key={i}>{err}</li>)}
             </ul>
@@ -340,12 +482,12 @@ export default function CompleteSEOApp() {
       <div style={{ display: "flex", gap: "10px", marginBottom: "20px", borderBottom: "1px solid #e1e3e5", paddingBottom: "10px", overflowX: "auto" }}>
         {["products", "collections", "pages", "blogs", "images", "guide"].map((tab) => {
           const labels: Record<string, string> = { 
-            products: `📦 Productos (${products.length})`, 
-            collections: `📂 Colecciones (${collections.length})`, 
-            pages: `📄 Páginas (${pages.length})`, 
-            blogs: `📝 Blog (${articles.length})`, 
-            images: "🖼️ Imágenes (ALT)", 
-            guide: "📚 Guía SEO" 
+            products: `${t.tabs.products} (${products.length})`, 
+            collections: `${t.tabs.collections} (${collections.length})`, 
+            pages: `${t.tabs.pages} (${pages.length})`, 
+            blogs: `${t.tabs.blogs} (${articles.length})`, 
+            images: `${t.tabs.images} (${imagesWithoutAlt.length})`, 
+            guide: t.tabs.guide 
           };
           return (
             <button key={tab} onClick={() => setActiveTab(tab as any)} style={{ padding: "8px 16px", borderRadius: "8px", border: "none", backgroundColor: activeTab === tab ? "#e1e3e5" : "transparent", fontWeight: activeTab === tab ? "600" : "400", cursor: "pointer", fontSize: "14px", color: "#202223", whiteSpace: "nowrap" }}>
@@ -361,23 +503,23 @@ export default function CompleteSEOApp() {
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead style={{ backgroundColor: "#f6f6f7", borderBottom: "1px solid #e1e3e5" }}>
               <tr>
-                <th style={{ padding: "12px 16px", textAlign: "left", fontSize: "13px", fontWeight: "600" }}>Producto</th>
-                <th style={{ padding: "12px 16px", textAlign: "left", fontSize: "13px", fontWeight: "600" }}>Puntuación</th>
-                <th style={{ padding: "12px 16px", textAlign: "left", fontSize: "13px", fontWeight: "600" }}>Problemas Detectados</th>
-                <th style={{ padding: "12px 16px", textAlign: "left", fontSize: "13px", fontWeight: "600" }}>Indexación</th>
-                <th style={{ padding: "12px 16px", textAlign: "right", fontSize: "13px", fontWeight: "600" }}>Acciones</th>
+                <th style={{ padding: "12px 16px", textAlign: "left", fontSize: "13px", fontWeight: "600" }}>{t.tables.product}</th>
+                <th style={{ padding: "12px 16px", textAlign: "left", fontSize: "13px", fontWeight: "600" }}>{t.tables.score}</th>
+                <th style={{ padding: "12px 16px", textAlign: "left", fontSize: "13px", fontWeight: "600" }}>{t.tables.issues}</th>
+                <th style={{ padding: "12px 16px", textAlign: "left", fontSize: "13px", fontWeight: "600" }}>{t.tables.indexing}</th>
+                <th style={{ padding: "12px 16px", textAlign: "right", fontSize: "13px", fontWeight: "600" }}>{t.tables.actions}</th>
               </tr>
             </thead>
             <tbody>
               {products.length === 0 ? (
-                <tr><td colSpan={5} style={{ padding: "20px", textAlign: "center", color: "#6d7175" }}>No hay productos disponibles.</td></tr>
+                <tr><td colSpan={5} style={{ padding: "20px", textAlign: "center", color: "#6d7175" }}>{t.empty.products}</td></tr>
               ) : (
                 products.map((prod) => (
                   <tr key={prod.id} style={{ borderBottom: "1px solid #f1f2f4" }}>
                     <td style={{ padding: "12px 16px" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                         <div style={{ width: "40px", height: "40px", backgroundColor: "#f6f6f7", borderRadius: "4px", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                          {prod.imageUrl ? <img src={prod.imageUrl} alt={prod.imageAlt || "Producto"} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ color: "#8c9196", fontSize: "12px" }}>Sin img</span>}
+                          {prod.imageUrl ? <img src={prod.imageUrl} alt={prod.imageAlt || t.tables.product} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ color: "#8c9196", fontSize: "12px" }}>{t.misc.noImg}</span>}
                         </div>
                         <div>
                           <div style={{ fontWeight: "600", fontSize: "14px", marginBottom: "4px" }}>{prod.title}</div>
@@ -389,18 +531,18 @@ export default function CompleteSEOApp() {
                     </td>
                     <td style={{ padding: "12px 16px" }}><span style={{ padding: "3px 8px", borderRadius: "10px", fontSize: "12px", fontWeight: "600", color: getScoreColor(prod.score), backgroundColor: "#f6f6f7" }}>{prod.score} / 100</span></td>
                     <td style={{ padding: "12px 16px" }}>
-                      {prod.issues.length === 0 ? <span style={{ color: "#108043", fontSize: "13px" }}>✓ Optimizado</span> : prod.issues.map((issue: string, idx: number) => <div key={idx} style={{ color: "#d82c0d", fontSize: "12px" }}>• {issue}</div>)}
+                      {prod.issues.length === 0 ? <span style={{ color: "#108043", fontSize: "13px" }}>{t.misc.optimized}</span> : prod.issues.map((issue: string, idx: number) => <div key={idx} style={{ color: "#d82c0d", fontSize: "12px" }}>• {t.backendIssues[issue as keyof typeof t.backendIssues] || issue}</div>)}
                     </td>
                     <td style={{ padding: "12px 16px" }}>
                       <span style={{ padding: "3px 8px", borderRadius: "10px", fontSize: "12px", backgroundColor: prod.isHidden ? "#fef3d6" : "#e3f1df", color: prod.isHidden ? "#8a6100" : "#108043" }}>
-                        {prod.isHidden ? "Oculto (noindex)" : "En Sitemap"}
+                        {prod.isHidden ? t.misc.hidden : t.misc.inSitemap}
                       </span>
                     </td>
                     <td style={{ padding: "12px 16px", textAlign: "right" }}>
                       <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end", alignItems: "center" }}>
-                        <s-button variant="secondary" onClick={() => handleOpenEditor(prod, "product")}>✏️ Editar SEO</s-button>
+                        <s-button variant="secondary" onClick={() => handleOpenEditor(prod, "product")}>{t.misc.editSeo}</s-button>
                         <s-button variant={prod.isHidden ? "primary" : "secondary"} tone={prod.isHidden ? "success" : "critical"} disabled={isSubmitting} onClick={() => handleToggleSitemap(prod.id, prod.isHidden)}>
-                          {prod.isHidden ? "Incluir" : "Excluir"}
+                          {prod.isHidden ? t.misc.include : t.misc.exclude}
                         </s-button>
                       </div>
                     </td>
@@ -416,16 +558,16 @@ export default function CompleteSEOApp() {
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead style={{ backgroundColor: "#f6f6f7", borderBottom: "1px solid #e1e3e5" }}>
               <tr>
-                <th style={{ padding: "12px 16px", textAlign: "left", fontSize: "13px", fontWeight: "600" }}>Colección</th>
-                <th style={{ padding: "12px 16px", textAlign: "left", fontSize: "13px", fontWeight: "600" }}>Puntuación</th>
-                <th style={{ padding: "12px 16px", textAlign: "left", fontSize: "13px", fontWeight: "600" }}>Problemas</th>
-                <th style={{ padding: "12px 16px", textAlign: "left", fontSize: "13px", fontWeight: "600" }}>Indexación</th>
-                <th style={{ padding: "12px 16px", textAlign: "right", fontSize: "13px", fontWeight: "600" }}>Acciones</th>
+                <th style={{ padding: "12px 16px", textAlign: "left", fontSize: "13px", fontWeight: "600" }}>{t.tables.collection}</th>
+                <th style={{ padding: "12px 16px", textAlign: "left", fontSize: "13px", fontWeight: "600" }}>{t.tables.score}</th>
+                <th style={{ padding: "12px 16px", textAlign: "left", fontSize: "13px", fontWeight: "600" }}>{t.tables.issues}</th>
+                <th style={{ padding: "12px 16px", textAlign: "left", fontSize: "13px", fontWeight: "600" }}>{t.tables.indexing}</th>
+                <th style={{ padding: "12px 16px", textAlign: "right", fontSize: "13px", fontWeight: "600" }}>{t.tables.actions}</th>
               </tr>
             </thead>
             <tbody>
               {collections.length === 0 ? (
-                <tr><td colSpan={5} style={{ padding: "20px", textAlign: "center", color: "#6d7175" }}>No hay colecciones disponibles.</td></tr>
+                <tr><td colSpan={5} style={{ padding: "20px", textAlign: "center", color: "#6d7175" }}>{t.empty.collections}</td></tr>
               ) : (
                 collections.map((col) => (
                   <tr key={col.id} style={{ borderBottom: "1px solid #f1f2f4" }}>
@@ -435,12 +577,12 @@ export default function CompleteSEOApp() {
                       <div style={{ fontSize: "11px", color: "#8c9196" }}>ID: {col.numericId}</div>
                     </td>
                     <td style={{ padding: "12px 16px" }}><span style={{ padding: "3px 8px", borderRadius: "10px", fontSize: "12px", fontWeight: "600", color: getScoreColor(col.score), backgroundColor: "#f6f6f7" }}>{col.score} / 100</span></td>
-                    <td style={{ padding: "12px 16px" }}>{col.issues.length === 0 ? <span style={{ color: "#108043", fontSize: "13px" }}>✓ Optimizado</span> : col.issues.map((issue: string, idx: number) => <div key={idx} style={{ color: "#d82c0d", fontSize: "12px" }}>• {issue}</div>)}</td>
-                    <td style={{ padding: "12px 16px" }}><span style={{ padding: "3px 8px", borderRadius: "10px", fontSize: "12px", backgroundColor: col.isHidden ? "#fef3d6" : "#e3f1df", color: col.isHidden ? "#8a6100" : "#108043" }}>{col.isHidden ? "Oculto (noindex)" : "En Sitemap"}</span></td>
+                    <td style={{ padding: "12px 16px" }}>{col.issues.length === 0 ? <span style={{ color: "#108043", fontSize: "13px" }}>{t.misc.optimized}</span> : col.issues.map((issue: string, idx: number) => <div key={idx} style={{ color: "#d82c0d", fontSize: "12px" }}>• {t.backendIssues[issue as keyof typeof t.backendIssues] || issue}</div>)}</td>
+                    <td style={{ padding: "12px 16px" }}><span style={{ padding: "3px 8px", borderRadius: "10px", fontSize: "12px", backgroundColor: col.isHidden ? "#fef3d6" : "#e3f1df", color: col.isHidden ? "#8a6100" : "#108043" }}>{col.isHidden ? t.misc.hidden : t.misc.inSitemap}</span></td>
                     <td style={{ padding: "12px 16px", textAlign: "right" }}>
                       <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end", alignItems: "center" }}>
-                        <s-button variant="secondary" onClick={() => handleOpenEditor(col, "collection")}>✏️ Editar SEO</s-button>
-                        <s-button variant={col.isHidden ? "primary" : "secondary"} tone={col.isHidden ? "success" : "critical"} disabled={isSubmitting} onClick={() => handleToggleSitemap(col.id, col.isHidden)}>{col.isHidden ? "Incluir" : "Excluir"}</s-button>
+                        <s-button variant="secondary" onClick={() => handleOpenEditor(col, "collection")}>{t.misc.editSeo}</s-button>
+                        <s-button variant={col.isHidden ? "primary" : "secondary"} tone={col.isHidden ? "success" : "critical"} disabled={isSubmitting} onClick={() => handleToggleSitemap(col.id, col.isHidden)}>{col.isHidden ? t.misc.include : t.misc.exclude}</s-button>
                       </div>
                     </td>
                   </tr>
@@ -455,16 +597,16 @@ export default function CompleteSEOApp() {
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead style={{ backgroundColor: "#f6f6f7", borderBottom: "1px solid #e1e3e5" }}>
               <tr>
-                <th style={{ padding: "12px 16px", textAlign: "left", fontSize: "13px", fontWeight: "600" }}>Página</th>
-                <th style={{ padding: "12px 16px", textAlign: "left", fontSize: "13px", fontWeight: "600" }}>Puntuación</th>
-                <th style={{ padding: "12px 16px", textAlign: "left", fontSize: "13px", fontWeight: "600" }}>Problemas</th>
-                <th style={{ padding: "12px 16px", textAlign: "left", fontSize: "13px", fontWeight: "600" }}>Indexación</th>
-                <th style={{ padding: "12px 16px", textAlign: "right", fontSize: "13px", fontWeight: "600" }}>Acciones</th>
+                <th style={{ padding: "12px 16px", textAlign: "left", fontSize: "13px", fontWeight: "600" }}>{t.tables.page}</th>
+                <th style={{ padding: "12px 16px", textAlign: "left", fontSize: "13px", fontWeight: "600" }}>{t.tables.score}</th>
+                <th style={{ padding: "12px 16px", textAlign: "left", fontSize: "13px", fontWeight: "600" }}>{t.tables.issues}</th>
+                <th style={{ padding: "12px 16px", textAlign: "left", fontSize: "13px", fontWeight: "600" }}>{t.tables.indexing}</th>
+                <th style={{ padding: "12px 16px", textAlign: "right", fontSize: "13px", fontWeight: "600" }}>{t.tables.actions}</th>
               </tr>
             </thead>
             <tbody>
               {pages.length === 0 ? (
-                <tr><td colSpan={5} style={{ padding: "20px", textAlign: "center", color: "#6d7175" }}>No hay páginas disponibles.</td></tr>
+                <tr><td colSpan={5} style={{ padding: "20px", textAlign: "center", color: "#6d7175" }}>{t.empty.pages}</td></tr>
               ) : (
                 pages.map((pg) => (
                   <tr key={pg.id} style={{ borderBottom: "1px solid #f1f2f4" }}>
@@ -474,12 +616,12 @@ export default function CompleteSEOApp() {
                       <div style={{ fontSize: "11px", color: "#8c9196" }}>ID: {pg.numericId}</div>
                     </td>
                     <td style={{ padding: "12px 16px" }}><span style={{ padding: "3px 8px", borderRadius: "10px", fontSize: "12px", fontWeight: "600", color: getScoreColor(pg.score), backgroundColor: "#f6f6f7" }}>{pg.score} / 100</span></td>
-                    <td style={{ padding: "12px 16px" }}>{pg.issues.length === 0 ? <span style={{ color: "#108043", fontSize: "13px" }}>✓ Optimizado</span> : pg.issues.map((issue: string, idx: number) => <div key={idx} style={{ color: "#d82c0d", fontSize: "12px" }}>• {issue}</div>)}</td>
-                    <td style={{ padding: "12px 16px" }}><span style={{ padding: "3px 8px", borderRadius: "10px", fontSize: "12px", backgroundColor: pg.isHidden ? "#fef3d6" : "#e3f1df", color: pg.isHidden ? "#8a6100" : "#108043" }}>{pg.isHidden ? "Oculto (noindex)" : "En Sitemap"}</span></td>
+                    <td style={{ padding: "12px 16px" }}>{pg.issues.length === 0 ? <span style={{ color: "#108043", fontSize: "13px" }}>{t.misc.optimized}</span> : pg.issues.map((issue: string, idx: number) => <div key={idx} style={{ color: "#d82c0d", fontSize: "12px" }}>• {t.backendIssues[issue as keyof typeof t.backendIssues] || issue}</div>)}</td>
+                    <td style={{ padding: "12px 16px" }}><span style={{ padding: "3px 8px", borderRadius: "10px", fontSize: "12px", backgroundColor: pg.isHidden ? "#fef3d6" : "#e3f1df", color: pg.isHidden ? "#8a6100" : "#108043" }}>{pg.isHidden ? t.misc.hidden : t.misc.inSitemap}</span></td>
                     <td style={{ padding: "12px 16px", textAlign: "right" }}>
                       <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end", alignItems: "center" }}>
-                        <s-button variant="secondary" onClick={() => handleOpenEditor(pg, "page")}>✏️ Editar SEO</s-button>
-                        <s-button variant={pg.isHidden ? "primary" : "secondary"} tone={pg.isHidden ? "success" : "critical"} disabled={isSubmitting} onClick={() => handleToggleSitemap(pg.id, pg.isHidden)}>{pg.isHidden ? "Incluir" : "Excluir"}</s-button>
+                        <s-button variant="secondary" onClick={() => handleOpenEditor(pg, "page")}>{t.misc.editSeo}</s-button>
+                        <s-button variant={pg.isHidden ? "primary" : "secondary"} tone={pg.isHidden ? "success" : "critical"} disabled={isSubmitting} onClick={() => handleToggleSitemap(pg.id, pg.isHidden)}>{pg.isHidden ? t.misc.include : t.misc.exclude}</s-button>
                       </div>
                     </td>
                   </tr>
@@ -494,34 +636,34 @@ export default function CompleteSEOApp() {
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead style={{ backgroundColor: "#f6f6f7", borderBottom: "1px solid #e1e3e5" }}>
               <tr>
-                <th style={{ padding: "12px 16px", textAlign: "left", fontSize: "13px", fontWeight: "600" }}>Artículo</th>
-                <th style={{ padding: "12px 16px", textAlign: "left", fontSize: "13px", fontWeight: "600" }}>Blog</th>
-                <th style={{ padding: "12px 16px", textAlign: "left", fontSize: "13px", fontWeight: "600" }}>Puntuación</th>
-                <th style={{ padding: "12px 16px", textAlign: "left", fontSize: "13px", fontWeight: "600" }}>Problemas</th>
-                <th style={{ padding: "12px 16px", textAlign: "left", fontSize: "13px", fontWeight: "600" }}>Indexación</th>
-                <th style={{ padding: "12px 16px", textAlign: "right", fontSize: "13px", fontWeight: "600" }}>Acciones</th>
+                <th style={{ padding: "12px 16px", textAlign: "left", fontSize: "13px", fontWeight: "600" }}>{t.tables.article}</th>
+                <th style={{ padding: "12px 16px", textAlign: "left", fontSize: "13px", fontWeight: "600" }}>{t.tables.blog}</th>
+                <th style={{ padding: "12px 16px", textAlign: "left", fontSize: "13px", fontWeight: "600" }}>{t.tables.score}</th>
+                <th style={{ padding: "12px 16px", textAlign: "left", fontSize: "13px", fontWeight: "600" }}>{t.tables.issues}</th>
+                <th style={{ padding: "12px 16px", textAlign: "left", fontSize: "13px", fontWeight: "600" }}>{t.tables.indexing}</th>
+                <th style={{ padding: "12px 16px", textAlign: "right", fontSize: "13px", fontWeight: "600" }}>{t.tables.actions}</th>
               </tr>
             </thead>
             <tbody>
               {articles.length === 0 ? (
-                <tr><td colSpan={6} style={{ padding: "20px", textAlign: "center", color: "#6d7175" }}>No hay artículos disponibles.</td></tr>
+                <tr><td colSpan={6} style={{ padding: "20px", textAlign: "center", color: "#6d7175" }}>{t.empty.articles}</td></tr>
               ) : (
                 articles.map((art) => (
                   <tr key={art.id} style={{ borderBottom: "1px solid #f1f2f4" }}>
                     <td style={{ padding: "12px 16px" }}>
                       <div style={{ fontWeight: "600", fontSize: "14px", marginBottom: "4px" }}>{art.title}</div>
-                      <div style={{ fontSize: "12px", color: "#6d7175", marginBottom: "2px" }}>Por {art.authorName}</div>
+                      <div style={{ fontSize: "12px", color: "#6d7175", marginBottom: "2px" }}>{t.misc.by} {art.authorName}</div>
                       <div style={{ fontSize: "12px", marginBottom: "2px" }}><a href={`https://${shop.myshopifyDomain}/blogs/${art.blogHandle}/${art.handle}`} target="_blank" rel="noopener noreferrer" style={{ color: "#2c6ecb", textDecoration: "none" }}>/blogs/{art.blogHandle}/{art.handle}</a></div>
                       <div style={{ fontSize: "11px", color: "#8c9196" }}>ID: {art.numericId}</div>
                     </td>
                     <td style={{ padding: "12px 16px" }}><span style={{ padding: "3px 8px", backgroundColor: "#f1f2f4", borderRadius: "10px", fontSize: "12px", fontWeight: "600" }}>{art.blogTitle}</span></td>
                     <td style={{ padding: "12px 16px" }}><span style={{ padding: "3px 8px", borderRadius: "10px", fontSize: "12px", fontWeight: "600", color: getScoreColor(art.score), backgroundColor: "#f6f6f7" }}>{art.score} / 100</span></td>
-                    <td style={{ padding: "12px 16px" }}>{art.issues.length === 0 ? <span style={{ color: "#108043", fontSize: "13px" }}>✓ Optimizado</span> : art.issues.map((issue: string, idx: number) => <div key={idx} style={{ color: "#d82c0d", fontSize: "12px" }}>• {issue}</div>)}</td>
-                    <td style={{ padding: "12px 16px" }}><span style={{ padding: "3px 8px", borderRadius: "10px", fontSize: "12px", backgroundColor: art.isHidden ? "#fef3d6" : "#e3f1df", color: art.isHidden ? "#8a6100" : "#108043" }}>{art.isHidden ? "Oculto (noindex)" : "En Sitemap"}</span></td>
+                    <td style={{ padding: "12px 16px" }}>{art.issues.length === 0 ? <span style={{ color: "#108043", fontSize: "13px" }}>{t.misc.optimized}</span> : art.issues.map((issue: string, idx: number) => <div key={idx} style={{ color: "#d82c0d", fontSize: "12px" }}>• {t.backendIssues[issue as keyof typeof t.backendIssues] || issue}</div>)}</td>
+                    <td style={{ padding: "12px 16px" }}><span style={{ padding: "3px 8px", borderRadius: "10px", fontSize: "12px", backgroundColor: art.isHidden ? "#fef3d6" : "#e3f1df", color: art.isHidden ? "#8a6100" : "#108043" }}>{art.isHidden ? t.misc.hidden : t.misc.inSitemap}</span></td>
                     <td style={{ padding: "12px 16px", textAlign: "right" }}>
                       <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end", alignItems: "center" }}>
-                        <s-button variant="secondary" onClick={() => handleOpenEditor(art, "article", art.blogHandle)}>✏️ Editar SEO</s-button>
-                        <s-button variant={art.isHidden ? "primary" : "secondary"} tone={art.isHidden ? "success" : "critical"} disabled={isSubmitting} onClick={() => handleToggleSitemap(art.id, art.isHidden)}>{art.isHidden ? "Incluir" : "Excluir"}</s-button>
+                        <s-button variant="secondary" onClick={() => handleOpenEditor(art, "article", art.blogHandle)}>{t.misc.editSeo}</s-button>
+                        <s-button variant={art.isHidden ? "primary" : "secondary"} tone={art.isHidden ? "success" : "critical"} disabled={isSubmitting} onClick={() => handleToggleSitemap(art.id, art.isHidden)}>{art.isHidden ? t.misc.include : t.misc.exclude}</s-button>
                       </div>
                     </td>
                   </tr>
@@ -531,70 +673,162 @@ export default function CompleteSEOApp() {
           </table>
         </s-card>
       )}
+      
       {activeTab === "images" && (
-        <s-card style={{ padding: "20px" }}>
-          <h2 style={{ fontSize: "16px", fontWeight: "600", marginTop: 0 }}>Optimizador Masivo de Etiquetas ALT</h2>
-          <p style={{ color: "#6d7175", fontSize: "14px" }}>Asigna automáticamente textos alternativos a todas las imágenes que actualmente no tienen etiqueta ALT.</p>
-          <div style={{ margin: "20px 0" }}>
-            <label style={{ display: "block", fontWeight: "600", fontSize: "14px", marginBottom: "6px" }}>Plantilla de Texto Alternativo (ALT):</label>
-            <input type="text" value={altTemplate} onChange={(e) => setAltTemplate(e.target.value)} style={{ width: "100%", maxWidth: "500px", padding: "8px 12px", borderRadius: "6px", border: "1px solid #c9cccf" }} />
-          </div>
-          <div style={{ padding: "12px", backgroundColor: "#f6f6f7", borderRadius: "6px", marginBottom: "20px", maxWidth: "500px" }}>
-            <span style={{ fontWeight: "600", fontSize: "13px" }}>Vista previa: </span><span style={{ fontSize: "13px" }}>{altTemplate.replace("{{title}}", "Camiseta").replace("{{shop}}", shop.name)}</span>
-          </div>
-          <s-button variant="primary" disabled={isSubmitting} onClick={handleBulkAltUpdate}>🚀 Aplicar ALT masivamente</s-button>
+        <s-card style={{ padding: "0" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead style={{ backgroundColor: "#f6f6f7", borderBottom: "1px solid #e1e3e5" }}>
+              <tr>
+                <th style={{ padding: "12px 16px", textAlign: "left", fontSize: "13px", fontWeight: "600" }}>{t.tables.imageProduct}</th>
+                <th style={{ padding: "12px 16px", textAlign: "left", fontSize: "13px", fontWeight: "600" }}>{t.tables.altText}</th>
+                <th style={{ padding: "12px 16px", textAlign: "right", fontSize: "13px", fontWeight: "600" }}>{t.tables.actions}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {imagesWithoutAlt.length === 0 ? (
+                <tr><td colSpan={3} style={{ padding: "20px", textAlign: "center", color: "#6d7175" }}>{t.empty.images}</td></tr>
+              ) : (
+                imagesWithoutAlt.map((img) => (
+                  <tr key={img.mediaId} style={{ borderBottom: "1px solid #f1f2f4" }}>
+                    <td style={{ padding: "12px 16px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                        <div style={{ width: "60px", height: "60px", backgroundColor: "#f6f6f7", borderRadius: "6px", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, border: "1px solid #e1e3e5" }}>
+                          <img src={img.url} alt="Sin ALT" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: "600", fontSize: "14px", marginBottom: "4px" }}>{img.productTitle}</div>
+                          <div style={{ fontSize: "12px" }}>
+                            <a href={`https://${shop.myshopifyDomain}/products/${img.productHandle}`} target="_blank" rel="noopener noreferrer" style={{ color: "#2c6ecb", textDecoration: "none" }}>{t.misc.viewOriginal}</a>
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+                    <td style={{ padding: "12px 16px" }}>
+                      <input 
+                        type="text" 
+                        placeholder={t.misc.altPlaceholder}
+                        value={imageAlts[img.mediaId] || ""}
+                        onChange={(e) => setImageAlts({ ...imageAlts, [img.mediaId]: e.target.value })}
+                        style={{ width: "100%", maxWidth: "350px", padding: "8px 12px", borderRadius: "6px", border: "1px solid #c9cccf", fontSize: "13px" }} 
+                      />
+                    </td>
+                    <td style={{ padding: "12px 16px", textAlign: "right" }}>
+                      <button 
+                        type="button"
+                        disabled={isSubmitting || !imageAlts[img.mediaId]?.trim()} 
+                        onClick={(e) => handleSaveSingleAlt(e, img.productId, img.mediaId)}
+                        style={{ 
+                          padding: "6px 12px", 
+                          borderRadius: "6px", 
+                          border: "none", 
+                          backgroundColor: (isSubmitting || !imageAlts[img.mediaId]?.trim()) ? "#e1e3e5" : "#2c6ecb", 
+                          color: (isSubmitting || !imageAlts[img.mediaId]?.trim()) ? "#8c9196" : "#ffffff", 
+                          fontWeight: "600", 
+                          cursor: (isSubmitting || !imageAlts[img.mediaId]?.trim()) ? "not-allowed" : "pointer",
+                          fontSize: "13px",
+                          fontFamily: "inherit"
+                        }}
+                      >
+                        {isSubmitting ? t.misc.saving : t.misc.saveAlt}
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </s-card>
       )}
+
+      {/* GUÍA SEO MULTILINGÜE */}
       {activeTab === "guide" && (
         <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+          
           <div style={{ backgroundColor: "#f0f7f5", border: "1px solid #b7ece0", borderRadius: "12px", padding: "20px", display: "flex", alignItems: "flex-start", gap: "14px" }}>
             <span style={{ fontSize: "28px", lineHeight: "1" }}>💡</span>
             <div>
-              <h3 style={{ margin: "0 0 6px 0", fontSize: "16px", fontWeight: "600", color: "#005e46" }}>Regla de Oro del SEO</h3>
-              <p style={{ margin: 0, color: "#2c5448", fontSize: "13px", lineHeight: "1.5" }}>Evita títulos genéricos. Utiliza siempre: <strong>[Producto] + [Material] + [Beneficio o Marca]</strong>.</p>
+              <h3 style={{ margin: "0 0 6px 0", fontSize: "16px", fontWeight: "600", color: "#005e46" }}>{t.guide.goldenTitle}</h3>
+              <p style={{ margin: 0, color: "#2c5448", fontSize: "13px", lineHeight: "1.5" }}>{t.guide.goldenDesc}</p>
             </div>
           </div>
+
+          <s-card style={{ padding: "24px" }}>
+            <h3 style={{ fontSize: "16px", fontWeight: "600", margin: "0 0 20px 0" }}>{t.guide.howTo}</h3>
+            
+            <div style={{ marginBottom: "20px" }}>
+              <h4 style={{ fontSize: "14px", fontWeight: "600", margin: "0 0 6px 0", color: "#202223" }}>{t.guide.scoreTitle}</h4>
+              <p style={{ margin: 0, color: "#6d7175", fontSize: "14px", lineHeight: "1.5" }}>{t.guide.scoreDesc}</p>
+            </div>
+
+            <div style={{ marginBottom: "20px" }}>
+              <h4 style={{ fontSize: "14px", fontWeight: "600", margin: "0 0 6px 0", color: "#202223" }}>{t.guide.editTitle}</h4>
+              <p style={{ margin: 0, color: "#6d7175", fontSize: "14px", lineHeight: "1.5" }}>{t.guide.editDesc}</p>
+            </div>
+
+            <div style={{ marginBottom: "20px" }}>
+              <h4 style={{ fontSize: "14px", fontWeight: "600", margin: "0 0 6px 0", color: "#202223" }}>{t.guide.indexTitle}</h4>
+              <p style={{ margin: 0, color: "#6d7175", fontSize: "14px", lineHeight: "1.5" }}>{t.guide.indexDesc}</p>
+            </div>
+
+            <div>
+              <h4 style={{ fontSize: "14px", fontWeight: "600", margin: "0 0 6px 0", color: "#202223" }}>{t.guide.imgTitle}</h4>
+              <p style={{ margin: 0, color: "#6d7175", fontSize: "14px", lineHeight: "1.5" }}>{t.guide.imgDesc}</p>
+            </div>
+          </s-card>
+
+          <s-card style={{ padding: "24px", backgroundColor: "#f6f6f7", border: "1px solid #e1e3e5" }}>
+            <h3 style={{ fontSize: "16px", fontWeight: "600", margin: "0 0 12px 0", color: "#202223" }}>{t.guide.contactTitle}</h3>
+            <p style={{ margin: "0 0 16px 0", color: "#4d5156", fontSize: "14px", lineHeight: "1.6" }}>
+              {t.guide.contact1} <a href="https://productexperts.withgoogle.com/directory/84251b18-9ee4-4567-8f66-60de6ab352ab" target="_blank" rel="noopener noreferrer" style={{ color: "#2c6ecb", textDecoration: "none" }}>{t.guide.contactLink}</a>{t.guide.contact2}
+            </p>
+            <p style={{ margin: 0, color: "#4d5156", fontSize: "14px", lineHeight: "1.6" }}>
+              {t.guide.contact3} <br/>
+              <a href="https://www.linkedin.com/in/alejandroeguia/" target="_blank" rel="noopener noreferrer" style={{ color: "#2c6ecb", textDecoration: "none", fontWeight: "600" }}>https://www.linkedin.com/in/alejandroeguia/</a>
+            </p>
+          </s-card>
+
         </div>
       )}
+      
       {editingItem && (
         <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: "20px" }}>
           <div style={{ backgroundColor: "#ffffff", borderRadius: "12px", width: "100%", maxWidth: "720px", padding: "24px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-              <h2 style={{ margin: 0, fontSize: "18px", fontWeight: "600" }}>Editar SEO: {editingItem.title}</h2>
+              <h2 style={{ margin: 0, fontSize: "18px", fontWeight: "600" }}>{t.modal.editSeo} {editingItem.title}</h2>
               <button onClick={() => setEditingItem(null)} style={{ background: "none", border: "none", fontSize: "20px", cursor: "pointer" }}>✕</button>
             </div>
             
             <div style={{ marginBottom: "16px" }}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
-                <label style={{ fontWeight: "600", fontSize: "13px" }}>Título SEO</label>
+                <label style={{ fontWeight: "600", fontSize: "13px" }}>{t.modal.seoTitle}</label>
                 <span style={{ fontSize: "12px", color: editingItem.seoTitle.length >= 50 && editingItem.seoTitle.length <= 60 ? "#108043" : "#8a6100" }}>{editingItem.seoTitle.length} / 60</span>
               </div>
               <input type="text" value={editingItem.seoTitle} onChange={(e) => setEditingItem({ ...editingItem, seoTitle: e.target.value })} style={{ width: "100%", padding: "8px", borderRadius: "6px", border: "1px solid #c9cccf" }} />
             </div>
             <div style={{ marginBottom: "24px" }}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
-                <label style={{ fontWeight: "600", fontSize: "13px" }}>Meta Descripción</label>
+                <label style={{ fontWeight: "600", fontSize: "13px" }}>{t.modal.metaDesc}</label>
                 <span style={{ fontSize: "12px", color: editingItem.seoDesc.length >= 120 && editingItem.seoDesc.length <= 155 ? "#108043" : "#8a6100" }}>{editingItem.seoDesc.length} / 155</span>
               </div>
               <textarea rows={3} value={editingItem.seoDesc} onChange={(e) => setEditingItem({ ...editingItem, seoDesc: e.target.value })} style={{ width: "100%", padding: "8px", borderRadius: "6px", border: "1px solid #c9cccf" }} />
             </div>
             <div style={{ border: "1px solid #e1e3e5", borderRadius: "8px", padding: "16px", backgroundColor: "#ffffff", marginBottom: "24px" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
-                <span style={{ fontWeight: "600", fontSize: "13px", color: "#303030" }}>Vista Previa en Google:</span>
+                <span style={{ fontWeight: "600", fontSize: "13px", color: "#303030" }}>{t.modal.preview}</span>
                 <div style={{ display: "flex", gap: "6px" }}>
-                  <button type="button" onClick={() => setPreviewDevice("desktop")} style={{ padding: "4px 8px", borderRadius: "4px", border: "1px solid #e1e3e5", backgroundColor: previewDevice === "desktop" ? "#202223" : "#ffffff", color: previewDevice === "desktop" ? "#ffffff" : "#202223", fontSize: "12px", cursor: "pointer" }}>🖥️ Escritorio</button>
-                  <button type="button" onClick={() => setPreviewDevice("mobile")} style={{ padding: "4px 8px", borderRadius: "4px", border: "1px solid #e1e3e5", backgroundColor: previewDevice === "mobile" ? "#202223" : "#ffffff", color: previewDevice === "mobile" ? "#ffffff" : "#202223", fontSize: "12px", cursor: "pointer" }}>📱 Móvil</button>
+                  <button type="button" onClick={() => setPreviewDevice("desktop")} style={{ padding: "4px 8px", borderRadius: "4px", border: "1px solid #e1e3e5", backgroundColor: previewDevice === "desktop" ? "#202223" : "#ffffff", color: previewDevice === "desktop" ? "#ffffff" : "#202223", fontSize: "12px", cursor: "pointer" }}>{t.modal.desktop}</button>
+                  <button type="button" onClick={() => setPreviewDevice("mobile")} style={{ padding: "4px 8px", borderRadius: "4px", border: "1px solid #e1e3e5", backgroundColor: previewDevice === "mobile" ? "#202223" : "#ffffff", color: previewDevice === "mobile" ? "#ffffff" : "#202223", fontSize: "12px", cursor: "pointer" }}>{t.modal.mobile}</button>
                 </div>
               </div>
               <div style={{ maxWidth: previewDevice === "mobile" ? "360px" : "600px", fontFamily: "Arial, sans-serif" }}>
                 <div style={{ fontSize: "12px", color: "#202124" }}>{getGoogleSnippetUrl()}</div>
                 <div style={{ color: "#1a0dab", fontSize: "18px", lineHeight: "1.3", cursor: "pointer", marginTop: "4px", textDecoration: "underline" }}>{editingItem.seoTitle || editingItem.title}</div>
-                <div style={{ color: "#4d5156", fontSize: "14px", lineHeight: "1.4", marginTop: "4px" }}>{editingItem.seoDesc || "Agrega una meta descripción para ver cómo aparecerá este resultado..."}</div>
+                <div style={{ color: "#4d5156", fontSize: "14px", lineHeight: "1.4", marginTop: "4px" }}>{editingItem.seoDesc || t.modal.addDesc}</div>
               </div>
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
-              <s-button variant="secondary" onClick={() => setEditingItem(null)}>Cancelar</s-button>
-              <s-button variant="primary" disabled={isSubmitting} onClick={handleSaveMetadata}>💾 Guardar en Shopify</s-button>
+              <s-button variant="secondary" onClick={() => setEditingItem(null)}>{t.modal.cancel}</s-button>
+              <s-button variant="primary" disabled={isSubmitting} onClick={handleSaveMetadata}>{t.modal.save}</s-button>
             </div>
           </div>
         </div>
