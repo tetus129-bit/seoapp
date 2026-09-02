@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 import { useLoaderData, useFetcher } from "react-router";
 import { authenticate } from "../shopify.server";
@@ -144,6 +144,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     }
   } catch (err: any) { apiErrors.push("Conexión Blog: " + (err.message || String(err))); }
 
+  // Solo contamos para el promedio global los que NO están ocultos (isHidden = false)
   const allScores = [
     ...products.filter((p) => !p.isHidden).map((p) => p.score),
     ...collections.filter((c) => !c.isHidden).map((c) => c.score),
@@ -171,23 +172,26 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       const seoDesc = (formData.get("seoDesc") as string) || "";
 
       if (resourceType === "product") {
-        await admin.graphql(
+        const response = await admin.graphql(
           ` mutation updateProductSEO($input: ProductInput!) { productUpdate(input: $input) { userErrors { field message } } }`,
           { variables: { input: { id: resourceId, seo: { title: seoTitle, description: seoDesc } } } }
         );
+        await response.json(); // Consumir respuesta para evitar pantalla en blanco 200
       } else if (resourceType === "collection") {
-        await admin.graphql(
+        const response = await admin.graphql(
           ` mutation updateCollectionSEO($input: CollectionInput!) { collectionUpdate(input: $input) { userErrors { field message } } }`,
           { variables: { input: { id: resourceId, seo: { title: seoTitle, description: seoDesc } } } }
         );
+        await response.json(); // Consumir respuesta para evitar pantalla en blanco 200
       } else if (resourceType === "page" || resourceType === "article") {
-        await admin.graphql(
+        const response = await admin.graphql(
           ` mutation updateContentSEO($metafields: [MetafieldsSetInput!]!) { metafieldsSet(metafields: $metafields) { userErrors { field message } } }`,
           { variables: { metafields: [
             { ownerId: resourceId, namespace: "global", key: "title_tag", value: seoTitle, type: "single_line_text_field" },
             { ownerId: resourceId, namespace: "global", key: "description_tag", value: seoDesc, type: "single_line_text_field" }
           ] } }
         );
+        await response.json(); // Consumir respuesta para evitar pantalla en blanco 200
       }
       return { success: true, message: "Metadatos SEO guardados correctamente en Shopify." };
     }
@@ -197,10 +201,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       const hideAction = formData.get("hideAction") as string;
       const value = hideAction === "hide" ? "1" : "0";
 
-      await admin.graphql(
+      const response = await admin.graphql(
         ` mutation setSEOHiddenMetafield($metafields: [MetafieldsSetInput!]!) { metafieldsSet(metafields: $metafields) { userErrors { field message } } }`,
         { variables: { metafields: [{ ownerId: resourceId, namespace: "seo", key: "hidden", value: value, type: "number_integer" }] } }
       );
+      await response.json(); // Consumir respuesta para evitar pantalla en blanco 200
+
       return { success: true, message: hideAction === "hide" ? "Recurso excluido del Sitemap e indexación (noindex)." : "Recurso incluido en el Sitemap." };
     }
 
@@ -215,7 +221,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           { variables: { productId, media: [{ id: mediaId, alt: altText }] } }
         );
         
-        const result = await response.json();
+        const result = await response.json(); // Consumir respuesta para evitar pantalla en blanco 200
         
         if (result.data?.productUpdateMedia?.mediaUserErrors?.length > 0) {
           return { error: result.data.productUpdateMedia.mediaUserErrors[0].message };
@@ -251,8 +257,17 @@ const dict = {
     tabs: { products: "📦 Productos", collections: "📂 Colecciones", pages: "📄 Páginas", blogs: "📝 Blog", images: "🖼️ Imágenes (ALT)", guide: "📚 Guía SEO" },
     tables: { product: "Producto", collection: "Colección", page: "Página", article: "Artículo", blog: "Blog", imageProduct: "Imagen y Producto", altText: "Texto Alternativo (ALT)", score: "Puntuación", issues: "Problemas Detectados", indexing: "Indexación", actions: "Acciones" },
     empty: { products: "No hay productos disponibles.", collections: "No hay colecciones disponibles.", pages: "No hay páginas disponibles.", articles: "No hay artículos disponibles.", images: "¡Genial! Todas tus imágenes ya tienen textos alternativos." },
-    misc: { noImg: "Sin img", by: "Por", viewOriginal: "Ver producto original ↗", altPlaceholder: "Ej: Zapatillas deportivas rojas talla 42...", saving: "Guardando...", saveAlt: "💾 Guardar ALT", active: "● Activo", draft: "○ Borrador", archived: "📦 Archivado", optimized: "✓ Optimizado", hidden: "Oculto (noindex)", inSitemap: "En Sitemap", editSeo: "✏️ Editar SEO", include: "Incluir", exclude: "Excluir", lang: "🌐 Idioma:" },
-    guide: { goldenTitle: "Regla de Oro del SEO", goldenDesc: "Evita títulos genéricos. Utiliza siempre: [Producto] + [Material] + [Beneficio o Marca].", howTo: "📖 Cómo utilizar esta aplicación", scoreTitle: "🎯 Puntuación SEO (0 a 100)", scoreDesc: "La aplicación analiza automáticamente tus títulos y descripciones SEO. Penaliza títulos que sean muy cortos (<30 caracteres) o demasiado largos (>60 caracteres), así como las descripciones muy breves (<70) o muy largas (>160). Además, reduce la puntuación si detecta imágenes que carecen de un texto alternativo (ALT).", editTitle: "✏️ Edición Rápida con Vista Previa", editDesc: "Al presionar el botón \"Editar SEO\", se abrirá un panel donde puedes modificar el Título y la Meta Descripción de cualquier producto, colección, página o artículo de blog. Mientras escribes, verás una simulación en tiempo real de cómo aparecería tu resultado en las búsquedas de Google, tanto en la versión móvil como en la versión de escritorio.", indexTitle: "👁️ Control de Indexación (Ocultar del Sitemap)", indexDesc: "Si tienes productos o páginas que no quieres que aparezcan en Google (por ejemplo, páginas de agradecimiento o productos exclusivos), puedes utilizar el botón \"Excluir\". Esto agrega una regla (metafield seo.hidden) que le indica a Shopify que elimine ese recurso de tu archivo sitemap.xml y agregue la etiqueta noindex para que los buscadores lo ignoren.", imgTitle: "🖼️ Optimización de Imágenes (ALT)", imgDesc: "En la pestaña \"Imágenes (ALT)\", la app filtra y te muestra únicamente las fotografías de tus productos que actualmente no tienen ningún texto alternativo. Podrás ver una pequeña miniatura de la imagen y escribir rápidamente su descripción. Al guardarlo, la imagen desaparecerá de la lista, ayudándote a mejorar tu posicionamiento en Google Imágenes.", contactTitle: "✉️ Contacto y Soporte", contact1: "Esta aplicación fue creada por Alejandro Eguía, trabajando en SEO desde 2006. Experto de Producto de Google desde 2013 en foro para Webmasters (", contactLink: "Ver credencial oficial", contact2: ").", contact3: "Si necesitas ayuda con la App o deseas agregar alguna funcionalidad, no dudes en contactarme:" },
+    misc: { noImg: "Sin img", by: "Por", viewOriginal: "Ver producto original ↗", altPlaceholder: "Ej: Zapatillas deportivas rojas talla 42...", saving: "Guardando...", saveAlt: "💾 Guardar ALT", active: "● Activo", draft: "○ Borrador", archived: "📦 Archivado", optimized: "✓ Optimizado", hidden: "Oculto (noindex)", inSitemap: "En Sitemap", editSeo: "✏️ Editar SEO", include: "Incluir", exclude: "Excluir", lang: "🌐 Idioma:", na: "N/A" },
+    guide: { 
+      goldenTitle: "Regla de Oro del SEO", goldenDesc: "Evita títulos genéricos. Utiliza siempre: [Producto] + [Material] + [Beneficio o Marca].", 
+      howTo: "📖 Cómo utilizar esta aplicación", 
+      scoreTitle: "🎯 Puntuación SEO (0 a 100)", scoreDesc: "La aplicación analiza automáticamente tus títulos y descripciones SEO. Penaliza títulos que sean muy cortos (<30 caracteres) o demasiado largos (>60 caracteres), así como las descripciones muy breves (<70) o muy largas (>160). Además, reduce la puntuación si detecta imágenes que carecen de un texto alternativo (ALT).", 
+      editTitle: "✏️ Edición Rápida con Vista Previa", editDesc: "Al presionar el botón \"Editar SEO\", se abrirá un panel donde puedes modificar el Título y la Meta Descripción de cualquier producto, colección, página o artículo de blog. Mientras escribes, verás una simulación en tiempo real de cómo aparecería tu resultado en las búsquedas de Google, tanto en la versión móvil como en la versión de escritorio.", 
+      indexTitle: "👁️ Control de Indexación (Ocultar del Sitemap)", indexDesc: "Si tienes productos o páginas que no quieres que aparezcan en Google (por ejemplo, páginas de agradecimiento o productos exclusivos), puedes utilizar el botón \"Excluir\". Esto agrega una regla (metafield seo.hidden) que le indica a Shopify que elimine ese recurso de tu archivo sitemap.xml y agregue la etiqueta noindex para que los buscadores lo ignoren.", 
+      imgTitle: "🖼️ Optimización de Imágenes (ALT)", imgDesc: "En la pestaña \"Imágenes (ALT)\", la app filtra y te muestra únicamente las fotografías de tus productos que actualmente no tienen ningún texto alternativo. Podrás ver una pequeña miniatura de la imagen y escribir rápidamente su descripción. Al guardarlo, la imagen desaparecerá de la lista, ayudándote a mejorar tu posicionamiento en Google Imágenes.", 
+      uninstallTitle: "🗑️ ¿Qué sucede si desinstalo la aplicación?", uninstallDesc: "Esta aplicación no inyecta ningún código fantasma ni scripts en el frontend (Theme) de tu tienda, por lo que no ralentiza tu sitio web en absoluto. Si decides desinstalarla, tu tienda quedará 100% limpia sin residuos. Además, todos los cambios que hayas realizado (títulos SEO, descripciones, textos ALT) se mantendrán intactos de forma permanente, ya que se guardan directamente de forma nativa en tu base de datos de Shopify.",
+      contactTitle: "✉️ Contacto y Soporte", contact1: "Esta aplicación fue creada por Alejandro Eguía, trabajando en SEO desde 2006. Experto de Producto de Google desde 2013 en foro para Webmasters (", contactLink: "Ver credencial oficial", contact2: ").", contact3: "Si necesitas ayuda con la App o deseas agregar alguna funcionalidad, no dudes en contactarme:" 
+    },
     modal: { editSeo: "Editar SEO:", seoTitle: "Título SEO", metaDesc: "Meta Descripción", preview: "Vista Previa en Google:", desktop: "🖥️ Escritorio", mobile: "📱 Móvil", addDesc: "Agrega una meta descripción para ver cómo aparecerá este resultado...", cancel: "Cancelar", save: "💾 Guardar en Shopify" },
     feedback: {
       "Metadatos SEO guardados correctamente en Shopify.": "Metadatos SEO guardados correctamente en Shopify.",
@@ -284,8 +299,17 @@ const dict = {
     tabs: { products: "📦 Products", collections: "📂 Collections", pages: "📄 Pages", blogs: "📝 Blog", images: "🖼️ Images (ALT)", guide: "📚 SEO Guide" },
     tables: { product: "Product", collection: "Collection", page: "Page", article: "Article", blog: "Blog", imageProduct: "Image and Product", altText: "Alternative Text (ALT)", score: "Score", issues: "Detected Issues", indexing: "Indexing", actions: "Actions" },
     empty: { products: "No products available.", collections: "No collections available.", pages: "No pages available.", articles: "No articles available.", images: "Great! All your images already have alternative texts." },
-    misc: { noImg: "No img", by: "By", viewOriginal: "View original product ↗", altPlaceholder: "E.g: Red sports shoes size 42...", saving: "Saving...", saveAlt: "💾 Save ALT", active: "● Active", draft: "○ Draft", archived: "📦 Archived", optimized: "✓ Optimized", hidden: "Hidden (noindex)", inSitemap: "In Sitemap", editSeo: "✏️ Edit SEO", include: "Include", exclude: "Exclude", lang: "🌐 Language:" },
-    guide: { goldenTitle: "Golden Rule of SEO", goldenDesc: "Avoid generic titles. Always use: [Product] + [Material] + [Benefit or Brand].", howTo: "📖 How to use this application", scoreTitle: "🎯 SEO Score (0 to 100)", scoreDesc: "The application automatically analyzes your SEO titles and descriptions. It penalizes titles that are too short (<30 characters) or too long (>60 characters), as well as descriptions that are very short (<70) or very long (>160). In addition, it reduces the score if it detects images lacking alternative text (ALT).", editTitle: "✏️ Quick Editing with Preview", editDesc: "By pressing the \"Edit SEO\" button, a panel will open where you can modify the Title and Meta Description of any product, collection, page, or blog article. As you type, you will see a real-time simulation of how your result would appear in Google searches, on both mobile and desktop versions.", indexTitle: "👁️ Indexing Control (Hide from Sitemap)", indexDesc: "If you have products or pages that you do not want to appear on Google (e.g., thank you pages or exclusive products), you can use the \"Exclude\" button. This adds a rule (seo.hidden metafield) that tells Shopify to remove that resource from your sitemap.xml file and adds the noindex tag so search engines ignore it.", imgTitle: "🖼️ Image Optimization (ALT)", imgDesc: "In the \"Images (ALT)\" tab, the app filters and shows you only the product photos that currently have no alternative text. You can see a small thumbnail of the image and quickly write its description. Upon saving, the image will disappear from the list, helping you improve your ranking in Google Images.", contactTitle: "✉️ Contact and Support", contact1: "This application was created by Alejandro Eguía, working in SEO since 2006. Google Product Expert since 2013 in the Webmaster forum (", contactLink: "View official credential", contact2: ").", contact3: "If you need help with the App or wish to add any functionality, do not hesitate to contact me:" },
+    misc: { noImg: "No img", by: "By", viewOriginal: "View original product ↗", altPlaceholder: "E.g: Red sports shoes size 42...", saving: "Saving...", saveAlt: "💾 Save ALT", active: "● Active", draft: "○ Draft", archived: "📦 Archived", optimized: "✓ Optimized", hidden: "Hidden (noindex)", inSitemap: "In Sitemap", editSeo: "✏️ Edit SEO", include: "Include", exclude: "Exclude", lang: "🌐 Language:", na: "N/A" },
+    guide: { 
+      goldenTitle: "Golden Rule of SEO", goldenDesc: "Avoid generic titles. Always use: [Product] + [Material] + [Benefit or Brand].", 
+      howTo: "📖 How to use this application", 
+      scoreTitle: "🎯 SEO Score (0 to 100)", scoreDesc: "The application automatically analyzes your SEO titles and descriptions. It penalizes titles that are too short (<30 characters) or too long (>60 characters), as well as descriptions that are very short (<70) or very long (>160). In addition, it reduces the score if it detects images lacking alternative text (ALT).", 
+      editTitle: "✏️ Quick Editing with Preview", editDesc: "By pressing the \"Edit SEO\" button, a panel will open where you can modify the Title and Meta Description of any product, collection, page, or blog article. As you type, you will see a real-time simulation of how your result would appear in Google searches, on both mobile and desktop versions.", 
+      indexTitle: "👁️ Indexing Control (Hide from Sitemap)", indexDesc: "If you have products or pages that you do not want to appear on Google (e.g., thank you pages or exclusive products), you can use the \"Exclude\" button. This adds a rule (seo.hidden metafield) that tells Shopify to remove that resource from your sitemap.xml file and adds the noindex tag so search engines ignore it.", 
+      imgTitle: "🖼️ Image Optimization (ALT)", imgDesc: "In the \"Images (ALT)\" tab, the app filters and shows you only the product photos that currently have no alternative text. You can see a small thumbnail of the image and quickly write its description. Upon saving, the image will disappear from the list, helping you improve your ranking in Google Images.", 
+      uninstallTitle: "🗑️ What happens if I uninstall the app?", uninstallDesc: "This app does not inject any ghost code or scripts into your store's frontend (Theme), so it does not slow down your website at all. If you decide to uninstall it, your store will remain 100% clean with no residue. Furthermore, all the changes you have made (SEO titles, descriptions, ALT texts) will remain intact permanently, as they are saved natively directly in your Shopify database.",
+      contactTitle: "✉️ Contact and Support", contact1: "This application was created by Alejandro Eguía, working in SEO since 2006. Google Product Expert since 2013 in the Webmaster forum (", contactLink: "View official credential", contact2: ").", contact3: "If you need help with the App or wish to add any functionality, do not hesitate to contact me:" 
+    },
     modal: { editSeo: "Edit SEO:", seoTitle: "SEO Title", metaDesc: "Meta Description", preview: "Google Preview:", desktop: "🖥️ Desktop", mobile: "📱 Mobile", addDesc: "Add a meta description to see how this result will appear...", cancel: "Cancel", save: "💾 Save to Shopify" },
     feedback: {
       "Metadatos SEO guardados correctamente en Shopify.": "SEO metadata successfully saved in Shopify.",
@@ -317,8 +341,17 @@ const dict = {
     tabs: { products: "📦 Produtos", collections: "📂 Coleções", pages: "📄 Páginas", blogs: "📝 Blog", images: "🖼️ Imagens (ALT)", guide: "📚 Guia SEO" },
     tables: { product: "Produto", collection: "Coleção", page: "Página", article: "Artigo", blog: "Blog", imageProduct: "Imagem e Produto", altText: "Texto Alternativo (ALT)", score: "Pontuação", issues: "Problemas Detectados", indexing: "Indexação", actions: "Ações" },
     empty: { products: "Nenhum produto disponível.", collections: "Nenhuma coleção disponível.", pages: "Nenhuma página disponível.", articles: "Nenhum artigo disponível.", images: "Ótimo! Todas as suas imagens já têm textos alternativos." },
-    misc: { noImg: "Sem img", by: "Por", viewOriginal: "Ver produto original ↗", altPlaceholder: "Ex: Tênis esportivo vermelho tamanho 42...", saving: "Salvando...", saveAlt: "💾 Salvar ALT", active: "● Ativo", draft: "○ Rascunho", archived: "📦 Arquivado", optimized: "✓ Otimizado", hidden: "Oculto (noindex)", inSitemap: "No Sitemap", editSeo: "✏️ Editar SEO", include: "Incluir", exclude: "Excluir", lang: "🌐 Idioma:" },
-    guide: { goldenTitle: "Regra de Ouro do SEO", goldenDesc: "Evite títulos genéricos. Use sempre: [Produto] + [Material] + [Benefício ou Marca].", howTo: "📖 Como usar este aplicativo", scoreTitle: "🎯 Pontuação SEO (0 a 100)", scoreDesc: "O aplicativo analisa automaticamente seus títulos e descrições SEO. Ele penaliza títulos muito curtos (<30 caracteres) ou muito longos (>60 caracteres), bem como descrições muito curtas (<70) ou muito longas (>160). Além disso, reduz a pontuação se detectar imagens sem texto alternativo (ALT).", editTitle: "✏️ Edição Rápida com Visualização", editDesc: "Ao pressionar o botão \"Editar SEO\", será aberto um painel onde você poderá modificar o Título e a Meta Descrição de qualquer produto, coleção, página ou artigo de blog. Enquanto digita, você verá uma simulação em tempo real de como o seu resultado apareceria nas pesquisas do Google, nas versões mobile e desktop.", indexTitle: "👁️ Controle de Indexação (Ocultar do Sitemap)", indexDesc: "Se você tem produtos ou páginas que não quer que apareçam no Google (por exemplo, páginas de agradecimento ou produtos exclusivos), você pode usar o botão \"Excluir\". Isso adiciona uma regra (metafield seo.hidden) que diz ao Shopify para remover esse recurso do seu arquivo sitemap.xml e adiciona a tag noindex para que os motores de busca o ignorem.", imgTitle: "🖼️ Otimização de Imagens (ALT)", imgDesc: "Na guia \"Imagens (ALT)\", o aplicativo filtra e mostra apenas as fotos dos produtos que atualmente não têm texto alternativo. Você pode ver uma pequena miniatura da imagem e escrever rapidamente sua descrição. Ao salvar, a imagem desaparecerá da lista, ajudando você a melhorar sua classificação no Google Imagens.", contactTitle: "✉️ Contato e Suporte", contact1: "Este aplicativo foi criado por Alejandro Eguía, trabalhando com SEO desde 2006. Especialista de Produto do Google desde 2013 no fórum para Webmasters (", contactLink: "Ver credencial oficial", contact2: ").", contact3: "Se precisar de ajuda com o Aplicativo ou quiser adicionar alguma funcionalidade, não hesite em me contatar:" },
+    misc: { noImg: "Sem img", by: "Por", viewOriginal: "Ver produto original ↗", altPlaceholder: "Ex: Tênis esportivo vermelho tamanho 42...", saving: "Salvando...", saveAlt: "💾 Salvar ALT", active: "● Ativo", draft: "○ Rascunho", archived: "📦 Arquivado", optimized: "✓ Otimizado", hidden: "Oculto (noindex)", inSitemap: "No Sitemap", editSeo: "✏️ Editar SEO", include: "Incluir", exclude: "Excluir", lang: "🌐 Idioma:", na: "N/A" },
+    guide: { 
+      goldenTitle: "Regra de Ouro do SEO", goldenDesc: "Evite títulos genéricos. Use sempre: [Produto] + [Material] + [Benefício ou Marca].", 
+      howTo: "📖 Como usar este aplicativo", 
+      scoreTitle: "🎯 Pontuação SEO (0 a 100)", scoreDesc: "O aplicativo analisa automaticamente seus títulos e descrições SEO. Ele penaliza títulos muito curtos (<30 caracteres) ou muito longos (>60 caracteres), bem como descrições muito curtas (<70) ou muito longas (>160). Além disso, reduz a pontuação se detectar imagens sem texto alternativo (ALT).", 
+      editTitle: "✏️ Edição Rápida com Visualização", editDesc: "Ao pressionar o botão \"Editar SEO\", será aberto um painel onde você poderá modificar o Título e a Meta Descrição de qualquer produto, coleção, página ou artigo de blog. Enquanto digita, você verá uma simulação em tempo real de como o seu resultado apareceria nas pesquisas do Google, nas versões mobile e desktop.", 
+      indexTitle: "👁️ Controle de Indexação (Ocultar do Sitemap)", indexDesc: "Se você tem produtos ou páginas que não quer que apareçam no Google (por exemplo, páginas de agradecimento ou produtos exclusivos), você pode usar o botão \"Excluir\". Isso adiciona uma regra (metafield seo.hidden) que diz ao Shopify para remover esse recurso do seu arquivo sitemap.xml e adiciona a tag noindex para que os motores de busca o ignorem.", 
+      imgTitle: "🖼️ Otimização de Imagens (ALT)", imgDesc: "Na guia \"Imagens (ALT)\", o aplicativo filtra e mostra apenas as fotos dos produtos que atualmente não têm texto alternativo. Você pode ver uma pequena miniatura da imagem e escrever rapidamente sua descrição. Ao salvar, a imagem desaparecerá da lista, ajudando você a melhorar sua classificação no Google Imagens.", 
+      uninstallTitle: "🗑️ O que acontece se eu desinstalar o aplicativo?", uninstallDesc: "Este aplicativo não injeta nenhum código fantasma ou scripts no frontend (Theme) da sua loja, portanto, não torna seu site mais lento de forma alguma. Se você decidir desinstalá-lo, sua loja ficará 100% limpa e sem resíduos. Além disso, todas as alterações que você fez (títulos de SEO, descrições, textos ALT) permanecerão intactas permanentemente, pois são salvas nativamente direto no seu banco de dados do Shopify.",
+      contactTitle: "✉️ Contato e Suporte", contact1: "Este aplicativo foi criado por Alejandro Eguía, trabalhando com SEO desde 2006. Especialista de Produto do Google desde 2013 no fórum para Webmasters (", contactLink: "Ver credencial oficial", contact2: ").", contact3: "Se precisar de ajuda com o Aplicativo ou quiser adicionar alguma funcionalidade, não hesite em me contatar:" 
+    },
     modal: { editSeo: "Editar SEO:", seoTitle: "Título SEO", metaDesc: "Meta Descrição", preview: "Visualização no Google:", desktop: "🖥️ Desktop", mobile: "📱 Celular", addDesc: "Adicione uma meta descrição para ver como este resultado aparecerá...", cancel: "Cancelar", save: "💾 Salvar no Shopify" },
     feedback: {
       "Metadatos SEO guardados correctamente en Shopify.": "Metadados SEO salvos com sucesso no Shopify.",
@@ -348,8 +381,31 @@ export default function CompleteSEOApp() {
   const fetcher = useFetcher<any>();
   const isSubmitting = fetcher.state !== "idle";
 
-  // ESTADO DE IDIOMA
-  const [lang, setLang] = useState<"es" | "en" | "pt">("es");
+  // ESTADO DE IDIOMA (Inglés por defecto)
+  const [lang, setLang] = useState<"es" | "en" | "pt">("en");
+
+  // EFECTO: Recuperar idioma guardado de localStorage al cargar la app
+  useEffect(() => {
+    try {
+      const storedLang = localStorage.getItem("seo_pro_lang");
+      if (storedLang === "es" || storedLang === "en" || storedLang === "pt") {
+        setLang(storedLang);
+      }
+    } catch (e) {
+      // Ignorar si localStorage está bloqueado
+    }
+  }, []);
+
+  // FUNCIÓN: Cambiar idioma y guardarlo en localStorage
+  const handleLangChange = (newLang: "es" | "en" | "pt") => {
+    setLang(newLang);
+    try {
+      localStorage.setItem("seo_pro_lang", newLang);
+    } catch (e) {
+      // Ignorar errores de almacenamiento
+    }
+  };
+
   const t = dict[lang];
 
   const actionData = fetcher.data;
@@ -404,6 +460,14 @@ export default function CompleteSEOApp() {
     return "#d82c0d";
   };
 
+  // Función para renderizar el puntaje (muestra N/A si está oculto/noindex)
+  const renderScore = (score: number, isHidden: boolean) => {
+    if (isHidden) {
+      return <span style={{ padding: "3px 8px", borderRadius: "10px", fontSize: "12px", fontWeight: "600", color: "#6d7175", backgroundColor: "#f1f2f4" }}>{t.misc.na}</span>;
+    }
+    return <span style={{ padding: "3px 8px", borderRadius: "10px", fontSize: "12px", fontWeight: "600", color: getScoreColor(score), backgroundColor: "#f6f6f7" }}>{score} / 100</span>;
+  };
+
   const renderProductStatus = (status: string) => {
     switch (status) {
       case "ACTIVE": return <span style={{ padding: "3px 8px", borderRadius: "10px", fontSize: "12px", fontWeight: "600", backgroundColor: "#e3f1df", color: "#108043" }}>{t.misc.active}</span>;
@@ -437,11 +501,11 @@ export default function CompleteSEOApp() {
               <span style={{ fontSize: "13px", color: "#6d7175", fontWeight: "600" }}>{t.misc.lang}</span>
               <select 
                 value={lang} 
-                onChange={(e) => setLang(e.target.value as "es" | "en" | "pt")}
+                onChange={(e) => handleLangChange(e.target.value as "es" | "en" | "pt")}
                 style={{ padding: "4px 8px", borderRadius: "4px", border: "1px solid #c9cccf", fontSize: "13px", backgroundColor: "#fff", cursor: "pointer" }}
               >
-                <option value="es">Español</option>
                 <option value="en">English</option>
+                <option value="es">Español</option>
                 <option value="pt">Português</option>
               </select>
             </div>
@@ -529,7 +593,7 @@ export default function CompleteSEOApp() {
                         </div>
                       </div>
                     </td>
-                    <td style={{ padding: "12px 16px" }}><span style={{ padding: "3px 8px", borderRadius: "10px", fontSize: "12px", fontWeight: "600", color: getScoreColor(prod.score), backgroundColor: "#f6f6f7" }}>{prod.score} / 100</span></td>
+                    <td style={{ padding: "12px 16px" }}>{renderScore(prod.score, prod.isHidden)}</td>
                     <td style={{ padding: "12px 16px" }}>
                       {prod.issues.length === 0 ? <span style={{ color: "#108043", fontSize: "13px" }}>{t.misc.optimized}</span> : prod.issues.map((issue: string, idx: number) => <div key={idx} style={{ color: "#d82c0d", fontSize: "12px" }}>• {t.backendIssues[issue as keyof typeof t.backendIssues] || issue}</div>)}
                     </td>
@@ -540,10 +604,21 @@ export default function CompleteSEOApp() {
                     </td>
                     <td style={{ padding: "12px 16px", textAlign: "right" }}>
                       <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end", alignItems: "center" }}>
-                        <s-button variant="secondary" onClick={() => handleOpenEditor(prod, "product")}>{t.misc.editSeo}</s-button>
-                        <s-button variant={prod.isHidden ? "primary" : "secondary"} tone={prod.isHidden ? "success" : "critical"} disabled={isSubmitting} onClick={() => handleToggleSitemap(prod.id, prod.isHidden)}>
+                        <button 
+                          type="button" 
+                          onClick={() => handleOpenEditor(prod, "product")} 
+                          style={{ padding: "6px 12px", borderRadius: "6px", border: "1px solid #c9cccf", backgroundColor: "#ffffff", color: "#202223", fontWeight: "600", cursor: "pointer", fontSize: "13px", fontFamily: "inherit" }}
+                        >
+                          {t.misc.editSeo}
+                        </button>
+                        <button 
+                          type="button" 
+                          disabled={isSubmitting} 
+                          onClick={() => handleToggleSitemap(prod.id, prod.isHidden)} 
+                          style={{ padding: "6px 12px", borderRadius: "6px", border: prod.isHidden ? "none" : "1px solid #c9cccf", backgroundColor: prod.isHidden ? "#108043" : "#ffffff", color: prod.isHidden ? "#ffffff" : "#d82c0d", fontWeight: "600", cursor: isSubmitting ? "not-allowed" : "pointer", fontSize: "13px", fontFamily: "inherit" }}
+                        >
                           {prod.isHidden ? t.misc.include : t.misc.exclude}
-                        </s-button>
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -576,13 +651,26 @@ export default function CompleteSEOApp() {
                       <div style={{ fontSize: "12px", marginBottom: "2px" }}><a href={`https://${shop.myshopifyDomain}/collections/${col.handle}`} target="_blank" rel="noopener noreferrer" style={{ color: "#2c6ecb", textDecoration: "none" }}>/collections/{col.handle}</a></div>
                       <div style={{ fontSize: "11px", color: "#8c9196" }}>ID: {col.numericId}</div>
                     </td>
-                    <td style={{ padding: "12px 16px" }}><span style={{ padding: "3px 8px", borderRadius: "10px", fontSize: "12px", fontWeight: "600", color: getScoreColor(col.score), backgroundColor: "#f6f6f7" }}>{col.score} / 100</span></td>
+                    <td style={{ padding: "12px 16px" }}>{renderScore(col.score, col.isHidden)}</td>
                     <td style={{ padding: "12px 16px" }}>{col.issues.length === 0 ? <span style={{ color: "#108043", fontSize: "13px" }}>{t.misc.optimized}</span> : col.issues.map((issue: string, idx: number) => <div key={idx} style={{ color: "#d82c0d", fontSize: "12px" }}>• {t.backendIssues[issue as keyof typeof t.backendIssues] || issue}</div>)}</td>
                     <td style={{ padding: "12px 16px" }}><span style={{ padding: "3px 8px", borderRadius: "10px", fontSize: "12px", backgroundColor: col.isHidden ? "#fef3d6" : "#e3f1df", color: col.isHidden ? "#8a6100" : "#108043" }}>{col.isHidden ? t.misc.hidden : t.misc.inSitemap}</span></td>
                     <td style={{ padding: "12px 16px", textAlign: "right" }}>
                       <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end", alignItems: "center" }}>
-                        <s-button variant="secondary" onClick={() => handleOpenEditor(col, "collection")}>{t.misc.editSeo}</s-button>
-                        <s-button variant={col.isHidden ? "primary" : "secondary"} tone={col.isHidden ? "success" : "critical"} disabled={isSubmitting} onClick={() => handleToggleSitemap(col.id, col.isHidden)}>{col.isHidden ? t.misc.include : t.misc.exclude}</s-button>
+                        <button 
+                          type="button" 
+                          onClick={() => handleOpenEditor(col, "collection")} 
+                          style={{ padding: "6px 12px", borderRadius: "6px", border: "1px solid #c9cccf", backgroundColor: "#ffffff", color: "#202223", fontWeight: "600", cursor: "pointer", fontSize: "13px", fontFamily: "inherit" }}
+                        >
+                          {t.misc.editSeo}
+                        </button>
+                        <button 
+                          type="button" 
+                          disabled={isSubmitting} 
+                          onClick={() => handleToggleSitemap(col.id, col.isHidden)} 
+                          style={{ padding: "6px 12px", borderRadius: "6px", border: col.isHidden ? "none" : "1px solid #c9cccf", backgroundColor: col.isHidden ? "#108043" : "#ffffff", color: col.isHidden ? "#ffffff" : "#d82c0d", fontWeight: "600", cursor: isSubmitting ? "not-allowed" : "pointer", fontSize: "13px", fontFamily: "inherit" }}
+                        >
+                          {col.isHidden ? t.misc.include : t.misc.exclude}
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -615,13 +703,26 @@ export default function CompleteSEOApp() {
                       <div style={{ fontSize: "12px", marginBottom: "2px" }}><a href={`https://${shop.myshopifyDomain}/pages/${pg.handle}`} target="_blank" rel="noopener noreferrer" style={{ color: "#2c6ecb", textDecoration: "none" }}>/pages/{pg.handle}</a></div>
                       <div style={{ fontSize: "11px", color: "#8c9196" }}>ID: {pg.numericId}</div>
                     </td>
-                    <td style={{ padding: "12px 16px" }}><span style={{ padding: "3px 8px", borderRadius: "10px", fontSize: "12px", fontWeight: "600", color: getScoreColor(pg.score), backgroundColor: "#f6f6f7" }}>{pg.score} / 100</span></td>
+                    <td style={{ padding: "12px 16px" }}>{renderScore(pg.score, pg.isHidden)}</td>
                     <td style={{ padding: "12px 16px" }}>{pg.issues.length === 0 ? <span style={{ color: "#108043", fontSize: "13px" }}>{t.misc.optimized}</span> : pg.issues.map((issue: string, idx: number) => <div key={idx} style={{ color: "#d82c0d", fontSize: "12px" }}>• {t.backendIssues[issue as keyof typeof t.backendIssues] || issue}</div>)}</td>
                     <td style={{ padding: "12px 16px" }}><span style={{ padding: "3px 8px", borderRadius: "10px", fontSize: "12px", backgroundColor: pg.isHidden ? "#fef3d6" : "#e3f1df", color: pg.isHidden ? "#8a6100" : "#108043" }}>{pg.isHidden ? t.misc.hidden : t.misc.inSitemap}</span></td>
                     <td style={{ padding: "12px 16px", textAlign: "right" }}>
                       <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end", alignItems: "center" }}>
-                        <s-button variant="secondary" onClick={() => handleOpenEditor(pg, "page")}>{t.misc.editSeo}</s-button>
-                        <s-button variant={pg.isHidden ? "primary" : "secondary"} tone={pg.isHidden ? "success" : "critical"} disabled={isSubmitting} onClick={() => handleToggleSitemap(pg.id, pg.isHidden)}>{pg.isHidden ? t.misc.include : t.misc.exclude}</s-button>
+                        <button 
+                          type="button" 
+                          onClick={() => handleOpenEditor(pg, "page")} 
+                          style={{ padding: "6px 12px", borderRadius: "6px", border: "1px solid #c9cccf", backgroundColor: "#ffffff", color: "#202223", fontWeight: "600", cursor: "pointer", fontSize: "13px", fontFamily: "inherit" }}
+                        >
+                          {t.misc.editSeo}
+                        </button>
+                        <button 
+                          type="button" 
+                          disabled={isSubmitting} 
+                          onClick={() => handleToggleSitemap(pg.id, pg.isHidden)} 
+                          style={{ padding: "6px 12px", borderRadius: "6px", border: pg.isHidden ? "none" : "1px solid #c9cccf", backgroundColor: pg.isHidden ? "#108043" : "#ffffff", color: pg.isHidden ? "#ffffff" : "#d82c0d", fontWeight: "600", cursor: isSubmitting ? "not-allowed" : "pointer", fontSize: "13px", fontFamily: "inherit" }}
+                        >
+                          {pg.isHidden ? t.misc.include : t.misc.exclude}
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -657,13 +758,26 @@ export default function CompleteSEOApp() {
                       <div style={{ fontSize: "11px", color: "#8c9196" }}>ID: {art.numericId}</div>
                     </td>
                     <td style={{ padding: "12px 16px" }}><span style={{ padding: "3px 8px", backgroundColor: "#f1f2f4", borderRadius: "10px", fontSize: "12px", fontWeight: "600" }}>{art.blogTitle}</span></td>
-                    <td style={{ padding: "12px 16px" }}><span style={{ padding: "3px 8px", borderRadius: "10px", fontSize: "12px", fontWeight: "600", color: getScoreColor(art.score), backgroundColor: "#f6f6f7" }}>{art.score} / 100</span></td>
+                    <td style={{ padding: "12px 16px" }}>{renderScore(art.score, art.isHidden)}</td>
                     <td style={{ padding: "12px 16px" }}>{art.issues.length === 0 ? <span style={{ color: "#108043", fontSize: "13px" }}>{t.misc.optimized}</span> : art.issues.map((issue: string, idx: number) => <div key={idx} style={{ color: "#d82c0d", fontSize: "12px" }}>• {t.backendIssues[issue as keyof typeof t.backendIssues] || issue}</div>)}</td>
                     <td style={{ padding: "12px 16px" }}><span style={{ padding: "3px 8px", borderRadius: "10px", fontSize: "12px", backgroundColor: art.isHidden ? "#fef3d6" : "#e3f1df", color: art.isHidden ? "#8a6100" : "#108043" }}>{art.isHidden ? t.misc.hidden : t.misc.inSitemap}</span></td>
                     <td style={{ padding: "12px 16px", textAlign: "right" }}>
                       <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end", alignItems: "center" }}>
-                        <s-button variant="secondary" onClick={() => handleOpenEditor(art, "article", art.blogHandle)}>{t.misc.editSeo}</s-button>
-                        <s-button variant={art.isHidden ? "primary" : "secondary"} tone={art.isHidden ? "success" : "critical"} disabled={isSubmitting} onClick={() => handleToggleSitemap(art.id, art.isHidden)}>{art.isHidden ? t.misc.include : t.misc.exclude}</s-button>
+                        <button 
+                          type="button" 
+                          onClick={() => handleOpenEditor(art, "article", art.blogHandle)} 
+                          style={{ padding: "6px 12px", borderRadius: "6px", border: "1px solid #c9cccf", backgroundColor: "#ffffff", color: "#202223", fontWeight: "600", cursor: "pointer", fontSize: "13px", fontFamily: "inherit" }}
+                        >
+                          {t.misc.editSeo}
+                        </button>
+                        <button 
+                          type="button" 
+                          disabled={isSubmitting} 
+                          onClick={() => handleToggleSitemap(art.id, art.isHidden)} 
+                          style={{ padding: "6px 12px", borderRadius: "6px", border: art.isHidden ? "none" : "1px solid #c9cccf", backgroundColor: art.isHidden ? "#108043" : "#ffffff", color: art.isHidden ? "#ffffff" : "#d82c0d", fontWeight: "600", cursor: isSubmitting ? "not-allowed" : "pointer", fontSize: "13px", fontFamily: "inherit" }}
+                        >
+                          {art.isHidden ? t.misc.include : t.misc.exclude}
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -776,6 +890,12 @@ export default function CompleteSEOApp() {
             </div>
           </s-card>
 
+          {/* NUEVA SECCIÓN DE DESINSTALACIÓN */}
+          <s-card style={{ padding: "24px", backgroundColor: "#fff9eb", border: "1px solid #fbdc8e" }}>
+            <h3 style={{ fontSize: "16px", fontWeight: "600", margin: "0 0 10px 0", color: "#202223" }}>{t.guide.uninstallTitle}</h3>
+            <p style={{ margin: 0, color: "#4d5156", fontSize: "14px", lineHeight: "1.6" }} dangerouslySetInnerHTML={{ __html: t.guide.uninstallDesc }}></p>
+          </s-card>
+
           <s-card style={{ padding: "24px", backgroundColor: "#f6f6f7", border: "1px solid #e1e3e5" }}>
             <h3 style={{ fontSize: "16px", fontWeight: "600", margin: "0 0 12px 0", color: "#202223" }}>{t.guide.contactTitle}</h3>
             <p style={{ margin: "0 0 16px 0", color: "#4d5156", fontSize: "14px", lineHeight: "1.6" }}>
@@ -827,8 +947,21 @@ export default function CompleteSEOApp() {
               </div>
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
-              <s-button variant="secondary" onClick={() => setEditingItem(null)}>{t.modal.cancel}</s-button>
-              <s-button variant="primary" disabled={isSubmitting} onClick={handleSaveMetadata}>{t.modal.save}</s-button>
+              <button 
+                type="button" 
+                onClick={() => setEditingItem(null)}
+                style={{ padding: "8px 16px", borderRadius: "6px", border: "1px solid #c9cccf", backgroundColor: "#ffffff", color: "#202223", fontWeight: "600", cursor: "pointer", fontSize: "13px", fontFamily: "inherit" }}
+              >
+                {t.modal.cancel}
+              </button>
+              <button 
+                type="button" 
+                disabled={isSubmitting} 
+                onClick={handleSaveMetadata}
+                style={{ padding: "8px 16px", borderRadius: "6px", border: "none", backgroundColor: isSubmitting ? "#e1e3e5" : "#2c6ecb", color: isSubmitting ? "#8c9196" : "#ffffff", fontWeight: "600", cursor: isSubmitting ? "not-allowed" : "pointer", fontSize: "13px", fontFamily: "inherit" }}
+              >
+                {isSubmitting ? t.misc.saving : t.modal.save}
+              </button>
             </div>
           </div>
         </div>
