@@ -573,8 +573,24 @@ export default function CompleteSEOApp() {
     );
   };
   
-  const executeApiCall = (body: Record<string, string>) => {
-    fetcher.submit(body, { method: "POST", action: "." });
+const executeApiCall = async (body: Record<string, string>) => {
+    try {
+      // 1. Solicita a Shopify un token nuevo en milisegundos si ya pasaron más de 60s
+      if (typeof window !== "undefined" && (window as any).shopify?.idToken) {
+        const token = await (window as any).shopify.idToken();
+        if (token) {
+          body.id_token = token;
+        }
+      }
+    } catch (e) {
+      console.error("Error al obtener token de sesión:", e);
+    }
+
+    // 2. Apunta explícitamente a ?index para ejecutar la acción de este archivo
+    fetcher.submit(body, { 
+      method: "POST", 
+      action: "?index" 
+    });
   };
 
   const handleOpenEditor = (item: any, type: "product" | "collection" | "page" | "article", parentHandle?: string) => {
