@@ -172,29 +172,23 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 // 2. ACCIONES (ACTION) - Escribir en Shopify
 // ==========================================
 export const action = async ({ request }: ActionFunctionArgs) => {
-  // 1. Clonar la petición original y extraer el formulario
+  // 1. Clonar para extraer el token sin consumir el body original
   const clonedRequest = request.clone();
   const formData = await clonedRequest.formData();
-  
-  // 2. Extraer el token fresco que enviaste desde el frontend
   const idToken = formData.get("id_token") as string;
-  
-  // 3. Crear una petición modificada inyectando el token fresco en las Cabeceras HTTP
-  let finalRequest = request;
+
+  // 2. Si el frontend nos envió un token fresco, lo inyectamos interceptando la propiedad headers
+  // Usamos Object.defineProperty para NO destruir el objeto Request original de Remix.
   if (idToken) {
-    const headers = new Headers(request.headers);
-    headers.set("Authorization", `Bearer ${idToken}`);
-    
-    // Al pasar 'request', hereda la URL y el método, pero pisa las cabeceras con el token nuevo
-    finalRequest = new Request(request, {
-      headers: headers
+    const newHeaders = new Headers(request.headers);
+    newHeaders.set("Authorization", `Bearer ${idToken}`);
+    Object.defineProperty(request, 'headers', {
+      get: () => newHeaders
     });
   }
 
-  // 4. Autenticar con Shopify usando la petición modificada (que ya tiene el token válido)
-  const { admin } = await authenticate.admin(finalRequest);
-  
-  // 5. Extraer el intent y continuar con la lógica normal
+  // 3. Autenticar usando el objeto request original (ahora con los headers parcheados)
+  const { admin } = await authenticate.admin(request);
   const intent = formData.get("intent") as string;
 
   try {
