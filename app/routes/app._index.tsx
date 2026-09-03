@@ -172,23 +172,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 // 2. ACCIONES (ACTION) - Escribir en Shopify
 // ==========================================
 export const action = async ({ request }: ActionFunctionArgs) => {
-  // 1. Extraemos el token fresco que enviaste desde tu frontend
-  const clonedRequest = request.clone();
-  const formDatos = await clonedRequest.formData();
-  const idToken = formDatos.get("id_token") as string;
-
-  // 2. Metemos ese token en las Cabeceras (Headers) de forma invisible
-  if (idToken) {
-    const newHeaders = new Headers(request.headers);
-    newHeaders.set("Authorization", `Bearer ${idToken}`);
-    // Este truco inyecta el token sin destruir la petición (lo que causó el error 200 antes)
-    Object.defineProperty(request, 'headers', { get: () => newHeaders });
-  }
-
-  // 3. Shopify valida tu sesión usando el token fresco
+  // Shopify/App Bridge se encarga de la autenticación de la petición.
+  // No leemos ni modificamos manualmente el session token.
   const { admin } = await authenticate.admin(request);
-  
-  // 4. Continuamos con el flujo normal de tu app
   const formData = await request.formData();
   const intent = formData.get("intent") as string;
 
@@ -637,22 +623,10 @@ export default function CompleteSEOApp() {
     );
   };
   
-  // FUNCIÓN LIMPIA DE ENVÍO CON TOKEN DE SESIÓN FRESCO
-  const executeApiCall = async (body: Record<string, string>) => {
-    try {
-      if (typeof window !== "undefined" && (window as any).shopify?.idToken) {
-        const token = await (window as any).shopify.idToken();
-        if (token) {
-          body.id_token = token;
-        }
-      }
-    } catch (e) {
-      console.error("Error al obtener token de sesión:", e);
-    }
-
+  // App Bridge/Shopify gestiona automáticamente el session token.
+  const executeApiCall = (body: Record<string, string>) => {
     fetcher.submit(body, {
       method: "POST",
-      action: "/app?index",
     });
   };
 
