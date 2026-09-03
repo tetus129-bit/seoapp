@@ -172,8 +172,29 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 // 2. ACCIONES (ACTION) - Escribir en Shopify
 // ==========================================
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { admin } = await authenticate.admin(request);
-  const formData = await request.formData();
+  // 1. Clonar la petición original y extraer el formulario
+  const clonedRequest = request.clone();
+  const formData = await clonedRequest.formData();
+  
+  // 2. Extraer el token fresco que enviaste desde el frontend
+  const idToken = formData.get("id_token") as string;
+  
+  // 3. Crear una petición modificada inyectando el token fresco en las Cabeceras HTTP
+  let finalRequest = request;
+  if (idToken) {
+    const headers = new Headers(request.headers);
+    headers.set("Authorization", `Bearer ${idToken}`);
+    
+    // Al pasar 'request', hereda la URL y el método, pero pisa las cabeceras con el token nuevo
+    finalRequest = new Request(request, {
+      headers: headers
+    });
+  }
+
+  // 4. Autenticar con Shopify usando la petición modificada (que ya tiene el token válido)
+  const { admin } = await authenticate.admin(finalRequest);
+  
+  // 5. Extraer el intent y continuar con la lógica normal
   const intent = formData.get("intent") as string;
 
   try {
