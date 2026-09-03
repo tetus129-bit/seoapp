@@ -182,30 +182,39 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       const resourceId = formData.get("resourceId") as string;
       const seoTitle = (formData.get("seoTitle") as string) || "";
       const seoDesc = (formData.get("seoDesc") as string) || "";
-
+      
+      let errors: any[] = [];
       if (resourceType === "product") {
         const response = await admin.graphql(
           ` mutation updateProductSEO($input: ProductInput!) { productUpdate(input: $input) { userErrors { field message } } }`,
           { variables: { input: { id: resourceId, seo: { title: seoTitle, description: seoDesc } } } }
         );
-        await response.json(); 
+        const json = await response.json();
+        errors = json.data?.productUpdate?.userErrors || [];
       } else if (resourceType === "collection") {
         const response = await admin.graphql(
           ` mutation updateCollectionSEO($input: CollectionInput!) { collectionUpdate(input: $input) { userErrors { field message } } }`,
           { variables: { input: { id: resourceId, seo: { title: seoTitle, description: seoDesc } } } }
         );
-        await response.json(); 
+        const json = await response.json();
+        errors = json.data?.collectionUpdate?.userErrors || [];
       } else if (resourceType === "page" || resourceType === "article") {
         const response = await admin.graphql(
           ` mutation updateContentSEO($metafields: [MetafieldsSetInput!]!) { metafieldsSet(metafields: $metafields) { userErrors { field message } } }`,
           { variables: { metafields: [
             { ownerId: resourceId, namespace: "global", key: "title_tag", value: seoTitle, type: "single_line_text_field" },
-            { ownerId: resourceId, namespace: "global", key: "description_tag", value: seoDesc, type: "single_line_text_field" }
+            { ownerId: resourceId, namespace: "global", key: "description_tag", value: seoDesc, type: "multi_line_text_field" }
           ] } }
         );
-        await response.json(); 
+        const json = await response.json();
+        errors = json.data?.metafieldsSet?.userErrors || [];
       }
-      return ({ success: true, message: "Metadatos SEO guardados correctamente en Shopify." });
+      
+      // Si Shopify rechaza la mutación, enviamos el error real al frontend
+      if (errors && errors.length > 0) {
+        return { error: errors[0].message };
+      }
+      return { success: true, message: "Metadatos SEO guardados correctamente en Shopify." };
     }
 
     if (intent === "toggle_sitemap") {
