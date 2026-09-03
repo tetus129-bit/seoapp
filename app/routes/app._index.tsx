@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
-import { useLoaderData, useFetcher, useRouteError } from "react-router";
+import { useLoaderData, useRevalidator, useRouteError } from "react-router";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
@@ -230,9 +230,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       }
       
       if (errors && errors.length > 0) {
-        return { error: errors[0].message };
+        return Response.json({ error: errors[0].message });
       }
-      return { success: true, message: "Metadatos SEO guardados correctamente en Shopify." };
+      return Response.json({ success: true, message: "Metadatos SEO guardados correctamente en Shopify." });
     }
 
     if (intent === "toggle_sitemap") {
@@ -253,10 +253,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       const errors = json.data?.metafieldsSet?.userErrors || [];
 
       if (errors && errors.length > 0) {
-        return { error: errors[0].message };
+        return Response.json({ error: errors[0].message });
       }
 
-      return { success: true, message: hideAction === "hide" ? "Recurso excluido del Sitemap e indexación (noindex)." : "Recurso incluido en el Sitemap." };
+      return Response.json({ success: true, message: hideAction === "hide" ? "Recurso excluido del Sitemap e indexación (noindex)." : "Recurso incluido en el Sitemap." });
     }
 
     if (intent === "save_canonical_url") {
@@ -264,7 +264,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       const rawCanonical = (formData.get("canonicalUrl") as string) || "";
       const canonicalUrl = rawCanonical.trim();
 
-      // SI SE DEJA EN BLANCO: Se elimina el metafield para que Shopify vuelva a la URL por defecto
+      // Si está en blanco, se borra el metafield para restablecer la URL por defecto
       if (!canonicalUrl) {
         const response = await admin.graphql(
           `#graphql
@@ -295,21 +295,19 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         );
         const json = await response.json();
         const errors = json.data?.metafieldsDelete?.userErrors || [];
-
-        // Ignorar si el error dice que el metafield no existía previamente
         const realErrors = errors.filter((e: any) => 
           !e.message?.toLowerCase().includes("not exist") && 
           !e.message?.toLowerCase().includes("not found")
         );
 
         if (realErrors.length > 0) {
-          return { error: realErrors[0].message };
+          return Response.json({ error: realErrors[0].message });
         }
 
-        return { success: true, message: "URL Canonical restablecida al valor por defecto." };
+        return Response.json({ success: true, message: "URL Canonical restablecida al valor por defecto." });
       }
 
-      // SI TIENE UNA URL: Se guarda normalmente
+      // Si incluye URL, se guarda en el metafield
       const response = await admin.graphql(
         `#graphql
         mutation setCanonicalMetafield($metafields: [MetafieldsSetInput!]!) { 
@@ -323,10 +321,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       const errors = json.data?.metafieldsSet?.userErrors || [];
 
       if (errors && errors.length > 0) {
-        return { error: errors[0].message };
+        return Response.json({ error: errors[0].message });
       }
 
-      return { success: true, message: "Canonical actualizado correctamente." };
+      return Response.json({ success: true, message: "Canonical actualizado correctamente." });
     }
 
     if (intent === "update_single_alt_text") {
@@ -347,19 +345,19 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         
         const result = await response.json(); 
         if (result.data?.productUpdateMedia?.mediaUserErrors?.length > 0) {
-          return { error: result.data.productUpdateMedia.mediaUserErrors[0].message };
+          return Response.json({ error: result.data.productUpdateMedia.mediaUserErrors[0].message });
         }
         
-        return { success: true, message: "Alt guardado exitosamente." };
+        return Response.json({ success: true, message: "Alt guardado exitosamente." });
       } catch (e: any) {
-        return { error: "Error de red al guardar el texto alternativo." };
+        return Response.json({ error: "Error de red al guardar el texto alternativo." });
       }
     }
 
-    return { error: "Intención no válida." };
+    return Response.json({ error: "Intención no válida." });
   } catch (error: any) {
     console.error("Error en Action:", error);
-    return { error: error.message || "Error al procesar la acción en Shopify." };
+    return Response.json({ error: error.message || "Error al procesar la acción en Shopify." });
   }
 };
 
@@ -487,7 +485,7 @@ const dict = {
       canonicalTitle: "🔗 Como ativar URLs Canônicas personalizadas?", canonicalDesc: "O Shopify não atualiza automaticamente a tag canônica no código-fonte da sua loja apenas por usar o App. Para que funcione e o Google a detecte, você deve ir em <b>Loja Virtual > Temas > Editar código</b>, abrir o arquivo <code>theme.liquid</code> e substituir a tag original <code>&lt;link rel=\"canonical\" href=\"{{ canonical_url }}\"&gt;</code> pelo seguinte código seguro:",
       canonicalCode: "{% assign custom_canonical = product.metafields.seo.canonical_url | default: collection.metafields.seo.canonical_url | default: page.metafields.seo.canonical_url | default: article.metafields.seo.canonical_url %}\n{% if custom_canonical and custom_canonical != blank %}\n  <link rel=\"canonical\" href=\"{{ custom_canonical }}\">\n{% else %}\n  <link rel=\"canonical\" href=\"{{ canonical_url }}\">\n{% endif %}",
       uninstallTitle: "🗑️ O que acontece se eu desinstalar o aplicativo?", uninstallDesc: "Este aplicativo não injeta nenhum código fantasma ou scripts no frontend (Theme) da sua loja, portanto, não torna seu site mais lento de forma alguma. Se você decidir desinstalá-lo, sua loja ficará 100% limpa e sem resíduos. Além disso, todas as alterações que você fez (títulos de SEO, descrições, textos ALT, canônicas) permanecerão intactas permanentemente, pois são salvas nativamente direto no seu banco de dados do Shopify.<br><br><b>Como reverter o código Canônico personalizado?</b> Se você desinstalar o aplicativo e quiser retornar ao comportamento padrão do Shopify, vá em <b>Loja Virtual > Temas > Editar código</b>, abra o arquivo <code>theme.liquid</code>, exclua o bloco de código que você adicionou e coloque a tag original novamente: <code>&lt;link rel=\"canonical\" href=\"{{ canonical_url }}\"&gt;</code>.",
-      contactTitle: "✉️ Contato e Suporte", contact1: "Este aplicativo foi criado por Alejandro Eguía, trabalhando com SEO desde 2006. Especialista de Produto do Google desde 2013 no fórum para Webmasters (", contactLink: "Ver credencial oficial", contact2: ").", contact3: "Se precisar de ajuda com o Aplicativo ou quiser adicionar alguma funcionalidad, não hesite em me contatar:" 
+      contactTitle: "✉️ Contato e Suporte", contact1: "Este aplicativo foi criado por Alejandro Eguía, trabalhando com SEO desde 2006. Especialista de Produto do Google desde 2013 no fórum para Webmasters (", contactLink: "Ver credencial oficial", contact2: ").", contact3: "Si precisar de ajuda com o Aplicativo ou quiser adicionar alguma funcionalidad, não hesite em me contatar:" 
     },
     modal: { editSeo: "Editar SEO:", seoTitle: "Título SEO", metaDesc: "Meta Descrição", preview: "Visualização no Google:", desktop: "🖥️ Desktop", mobile: "📱 Celular", addDesc: "Adicione uma meta descrição para ver como este resultado aparecerá...", cancel: "Cancelar", save: "💾 Salvar no Shopify" },
     modalCanonical: { title: "Personalizar URL Canônica para:", defaultLabel: "URL Original (Padrão):", customLabel: "Nova URL Canônica (opcional):", placeholder: "https://sua-loja.com/nova-url", emptyNote: "Se você deixar em branco, o Shopify usará a URL original por padrão.", cancel: "Cancelar", save: "💾 Salvar Canônica", alreadyInstalledNote: "⚠️ Você só precisa fazer isso <b>UMA VEZ</b> por loja. Se você já fez isso, marque a caixa abaixo.", markAsInstalled: "Já adicionei este código ao meu Theme", successMsg: "✅ Você indicou que o código Canônico já está instalado no seu Theme. Tudo está funcionando bem!", showInstructions: "Ver instruções de instalação", finalStep: "⚠️ Passo Final: Adicione este código ao seu Theme", finalStepDesc: "O Shopify exige que você substitua a tag <code>&lt;link rel=\"canonical\"&gt;</code> original no arquivo <code>theme.liquid</code> (Loja Virtual &gt; Temas &gt; Editar código) por este trecho exato para que funcione:" },
@@ -520,10 +518,22 @@ export default function CompleteSEOApp() {
   const loaderData = useLoaderData<typeof loader>();
   const { shop, products, collections, pages, articles, totalScore, apiErrors, imagesWithoutAlt } = loaderData;
   
-  const fetcher = useFetcher<any>();
-  const isSubmitting = fetcher.state !== "idle";
+  const revalidator = useRevalidator();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [feedback, setFeedback] = useState<{ type: "success" | "critical"; message: string } | null>(null);
 
   const [lang, setLang] = useState<"es" | "en" | "pt">("en");
+
+  // Limpieza inicial: se quita el id_token viejo de la barra de direcciones para evitar expiraciones
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      if (url.searchParams.has("id_token")) {
+        url.searchParams.delete("id_token");
+        window.history.replaceState({}, "", url.pathname + url.search);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     try {
@@ -542,13 +552,6 @@ export default function CompleteSEOApp() {
   };
 
   const t = dict[lang];
-
-  const actionData = fetcher.data;
-  const feedback = actionData 
-    ? (actionData.error 
-        ? { type: "critical" as const, message: t.feedback[actionData.error as keyof typeof t.feedback] || actionData.error } 
-        : { type: "success" as const, message: t.feedback[actionData.message as keyof typeof t.feedback] || actionData.message }) 
-    : null;
 
   const [activeTab, setActiveTab] = useState<"products" | "collections" | "pages" | "blogs" | "images" | "guide">("products");
   
@@ -623,26 +626,69 @@ export default function CompleteSEOApp() {
     );
   };
   
-  // INYECCIÓN DE TOKEN FRESCO Y PRESERVACIÓN DE PARÁMETROS DE SESIÓN
+  // LLAMADA A LA API CON RENOVACIÓN DE TOKEN Y CABECERAS DIRECTAS
   const executeApiCall = async (body: Record<string, string>) => {
+    setIsSubmitting(true);
+    setFeedback(null);
+
     try {
+      // 1. Obtener token fresco de App Bridge (válido por los siguientes 60s)
+      let token = "";
       if (typeof window !== "undefined" && (window as any).shopify?.idToken) {
-        const token = await (window as any).shopify.idToken();
-        if (token) {
-          body.id_token = token;
-        }
+        token = await (window as any).shopify.idToken();
       }
-    } catch (e) {
-      console.error("Error al obtener token de sesión:", e);
+
+      // 2. Construir FormData
+      const formData = new FormData();
+      for (const key in body) {
+        formData.append(key, body[key]);
+      }
+
+      // 3. Parámetros de URL limpios sin id_token expirado
+      const params = new URLSearchParams(window.location.search);
+      params.delete("id_token");
+      params.delete("hmac");
+      params.delete("timestamp");
+      params.set("index", "");
+
+      // 4. Envío por fetch directo con cabecera Authorization
+      const response = await fetch(`/app?${params.toString()}`, {
+        method: "POST",
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: formData,
+      });
+
+      if (!response.ok && response.status === 401) {
+        window.location.reload();
+        return;
+      }
+
+      const data = await response.json();
+
+      if (data.error) {
+        setFeedback({
+          type: "critical",
+          message: t.feedback[data.error as keyof typeof t.feedback] || data.error,
+        });
+      } else {
+        setFeedback({
+          type: "success",
+          message: t.feedback[data.message as keyof typeof t.feedback] || data.message || "Guardado exitosamente.",
+        });
+        // 5. Revalidar datos del loader para actualizar la tabla sin recargar la página
+        revalidator.revalidate();
+      }
+    } catch (err: any) {
+      console.error("Error en executeApiCall:", err);
+      setFeedback({
+        type: "critical",
+        message: "Error de conexión al guardar los datos.",
+      });
+    } finally {
+      setIsSubmitting(false);
     }
-
-    const params = new URLSearchParams(window.location.search);
-    params.set("index", "");
-
-    fetcher.submit(body, {
-      method: "POST",
-      action: `/app?${params.toString()}`,
-    });
   };
 
   const handleOpenEditor = (item: any, type: "product" | "collection" | "page" | "article", parentHandle?: string) => {
