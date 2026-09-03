@@ -16,6 +16,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   return redirect("/app");
 };
 
+// Necesario en React Router v7 para que no renderice el status HTTP como texto plano
+export default function AuthBoundary() {
+  return null;
+}
+
 export const headers: HeadersFunction = (headersArgs) => {
   return boundary.headers(headersArgs);
 };

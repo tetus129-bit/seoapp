@@ -438,12 +438,12 @@ const dict = {
       canonicalTitle: "🔗 Como ativar URLs Canônicas personalizadas?", canonicalDesc: "O Shopify não atualiza automaticamente a tag canônica no código-fonte da sua loja apenas por usar o App. Para que funcione e o Google a detecte, você deve ir em <b>Loja Virtual > Temas > Editar código</b>, abrir o arquivo <code>theme.liquid</code> e substituir a tag original <code>&lt;link rel=\"canonical\" href=\"{{ canonical_url }}\"&gt;</code> pelo seguinte código seguro:",
       canonicalCode: "{% assign custom_canonical = product.metafields.seo.canonical_url | default: collection.metafields.seo.canonical_url | default: page.metafields.seo.canonical_url | default: article.metafields.seo.canonical_url %}\n{% if custom_canonical and custom_canonical != blank %}\n  <link rel=\"canonical\" href=\"{{ custom_canonical }}\">\n{% else %}\n  <link rel=\"canonical\" href=\"{{ canonical_url }}\">\n{% endif %}",
       uninstallTitle: "🗑️ O que acontece se eu desinstalar o aplicativo?", uninstallDesc: "Este aplicativo não injeta nenhum código fantasma ou scripts no frontend (Theme) da sua loja, portanto, não torna seu site mais lento de forma alguma. Se você decidir desinstalá-lo, sua loja ficará 100% limpa e sem resíduos. Além disso, todas as alterações que você fez (títulos de SEO, descrições, textos ALT, canônicas) permanecerão intactas permanentemente, pois são salvas nativamente direto no seu banco de dados do Shopify.<br><br><b>Como reverter o código Canônico personalizado?</b> Se você desinstalar o aplicativo e quiser retornar ao comportamento padrão do Shopify, vá em <b>Loja Virtual > Temas > Editar código</b>, abra o arquivo <code>theme.liquid</code>, exclua o bloco de código que você adicionou e coloque a tag original novamente: <code>&lt;link rel=\"canonical\" href=\"{{ canonical_url }}\"&gt;</code>.",
-      contactTitle: "✉️ Contato e Suporte", contact1: "Este aplicativo foi criado por Alejandro Eguía, trabalhando com SEO desde 2006. Especialista de Produto do Google desde 2013 no fórum para Webmasters (", contactLink: "Ver credencial oficial", contact2: ").", contact3: "Se precisar de ajuda com o Aplicativo ou quiser adicionar alguma funcionalidade, não hesite em me contatar:" 
+      contactTitle: "✉️ Contato e Suporte", contact1: "Este aplicativo foi criado por Alejandro Eguía, trabalhando com SEO desde 2006. Especialista de Produto do Google desde 2013 no fórum para Webmasters (", contactLink: "Ver credencial oficial", contact2: ").", contact3: "Se precisar de ajuda com o Aplicativo ou quiser adicionar alguma funcionalidad, não hesite em me contatar:" 
     },
     modal: { editSeo: "Editar SEO:", seoTitle: "Título SEO", metaDesc: "Meta Descrição", preview: "Visualização no Google:", desktop: "🖥️ Desktop", mobile: "📱 Celular", addDesc: "Adicione uma meta descrição para ver como este resultado aparecerá...", cancel: "Cancelar", save: "💾 Salvar no Shopify" },
     modalCanonical: { title: "Personalizar URL Canônica para:", defaultLabel: "URL Original (Padrão):", customLabel: "Nova URL Canônica (opcional):", placeholder: "https://sua-loja.com/nova-url", emptyNote: "Se você deixar em branco, o Shopify usará a URL original por padrão.", cancel: "Cancelar", save: "💾 Salvar Canônica", alreadyInstalledNote: "⚠️ Você só precisa fazer isso <b>UMA VEZ</b> por loja. Se você já fez isso, marque a caixa abaixo.", markAsInstalled: "Já adicionei este código ao meu Theme", successMsg: "✅ Você indicou que o código Canônico já está instalado no seu Theme. Tudo está funcionando bem!", showInstructions: "Ver instruções de instalação", finalStep: "⚠️ Passo Final: Adicione este código ao seu Theme", finalStepDesc: "O Shopify exige que você substitua a tag <code>&lt;link rel=\"canonical\"&gt;</code> original no arquivo <code>theme.liquid</code> (Loja Virtual &gt; Temas &gt; Editar código) por este trecho exato para que funcione:" },
     feedback: {
-      "Metadatos SEO guardados correctamente en Shopify.": "Metadados SEO salvos com sucesso no Shopify.",
+      "Metadatos SEO guardados correctamente en Shopify.": "Metadatos SEO salvos com sucesso no Shopify.",
       "Recurso excluido del Sitemap e indexación (noindex).": "Recurso excluído do Sitemap e indexação (noindex).",
       "Recurso incluido en el Sitemap.": "Recurso incluído no Sitemap.",
       "Alt guardado exitosamente.": "Alt salvo com sucesso.",
@@ -573,23 +573,13 @@ export default function CompleteSEOApp() {
     );
   };
   
-const executeApiCall = async (body: Record<string, string>) => {
-    try {
-      // 1. Solicita a Shopify un token nuevo en milisegundos si ya pasaron más de 60s
-      if (typeof window !== "undefined" && (window as any).shopify?.idToken) {
-        const token = await (window as any).shopify.idToken();
-        if (token) {
-          body.id_token = token;
-        }
-      }
-    } catch (e) {
-      console.error("Error al obtener token de sesión:", e);
-    }
+  const executeApiCall = (body: Record<string, string>) => {
+    const params = new URLSearchParams(window.location.search);
+    params.set("index", "");
 
-    // 2. Apunta explícitamente a ?index para ejecutar la acción de este archivo
-    fetcher.submit(body, { 
-      method: "POST", 
-      action: "?index" 
+    fetcher.submit(body, {
+      method: "POST",
+      action: `/app?${params.toString()}`,
     });
   };
 
