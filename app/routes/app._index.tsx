@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 import { useLoaderData, useFetcher, useRouteError } from "react-router";
 import { authenticate } from "../shopify.server";
-import { boundary } from "@shopify/shopify-app-remix/server";
+import { boundary } from "@shopify/shopify-app-react-router/server";
 
 // ==========================================
 // 1. CARGA DE DATOS (LOADER) - Leer de Shopify
