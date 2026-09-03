@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 import { useLoaderData, useFetcher } from "react-router";
 import { authenticate } from "../shopify.server";
@@ -7,7 +7,7 @@ import { authenticate } from "../shopify.server";
 // 1. CARGA DE DATOS (LOADER) - Leer de Shopify
 // ==========================================
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { admin } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
   
   let shop = { name: "Mi Tienda", myshopifyDomain: "" };
   let products: any[] = [];
@@ -163,7 +163,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     ...articles.filter((a) => !a.isHidden).map((a) => a.score)
   ];
   const totalScore = allScores.length > 0 ? Math.round(allScores.reduce((acc, curr) => acc + curr, 0) / allScores.length) : 100;
-
+  
   return { shop, products, collections, pages, articles, totalScore, apiErrors, imagesWithoutAlt };
 };
 
@@ -171,7 +171,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 // 2. ACCIONES (ACTION) - Escribir en Shopify
 // ==========================================
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { admin } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
   const formData = await request.formData();
   const intent = formData.get("intent") as string;
 
@@ -204,7 +204,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         );
         await response.json(); 
       }
-      return Response.json({ success: true, message: "Metadatos SEO guardados correctamente en Shopify." });
+      return ({ success: true, message: "Metadatos SEO guardados correctamente en Shopify." });
     }
 
     if (intent === "toggle_sitemap") {
@@ -218,7 +218,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       );
       await response.json(); 
 
-      return Response.json({ success: true, message: hideAction === "hide" ? "Recurso excluido del Sitemap e indexación (noindex)." : "Recurso incluido en el Sitemap." });
+      return ({ success: true, message: hideAction === "hide" ? "Recurso excluido del Sitemap e indexación (noindex)." : "Recurso incluido en el Sitemap." });
     }
 
     if (intent === "save_canonical_url") {
@@ -231,7 +231,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       );
       await response.json();
 
-      return Response.json({ success: true, message: "Canonical actualizado correctamente." });
+      return ({ success: true, message: "Canonical actualizado correctamente." });
     }
 
     if (intent === "update_single_alt_text") {
@@ -248,19 +248,19 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         const result = await response.json(); 
         
         if (result.data?.productUpdateMedia?.mediaUserErrors?.length > 0) {
-          return Response.json({ error: result.data.productUpdateMedia.mediaUserErrors[0].message });
+          return ({ error: result.data.productUpdateMedia.mediaUserErrors[0].message });
         }
         
-        return Response.json({ success: true, message: "Alt guardado exitosamente." });
+        return ({ success: true, message: "Alt guardado exitosamente." });
       } catch (e: any) {
-        return Response.json({ error: "Error de red al guardar el texto alternativo." });
+        return ({ error: "Error de red al guardar el texto alternativo." });
       }
     }
 
-    return Response.json({ error: "Intención no válida." });
+    return ({ error: "Intención no válida." });
   } catch (error: any) {
     console.error("Error en Action:", error);
-    return Response.json({ error: error.message || "Error al procesar la acción en Shopify." });
+    return ({ error: error.message || "Error al procesar la acción en Shopify." });
   }
 };
 
@@ -275,7 +275,7 @@ const dict = {
     permErrorTitle: "⚠️ Error de Permisos en Shopify",
     permErrorDesc: "Shopify ha bloqueado el acceso a la lectura de ciertos datos (por ejemplo, Páginas o Blogs). Para solucionarlo:",
     permError1: "Abre tu archivo shopify.app.toml",
-    permError2: "Asegúrate de tener estos scopes:",
+    permError2: "Asegúrate de tener estos scopes: write_products, read_online_store_pages, write_online_store_pages, read_content, write_content, write_metaobjects, write_metaobject_definitions, read_themes, write_themes",
     permError3: "Detén la terminal del servidor y vuelve a correr npm run dev",
     permErrorDetails: "Ver detalles técnicos del error",
     tabs: { products: "📦 Productos", collections: "📂 Colecciones", pages: "📄 Páginas", blogs: "📝 Blog", images: "🖼️ Imágenes (ALT)", guide: "📚 Guía SEO" },
@@ -302,6 +302,7 @@ const dict = {
       "Recurso incluido en el Sitemap.": "Recurso incluido en el Sitemap.",
       "Alt guardado exitosamente.": "Alt guardado exitosamente.",
       "Canonical actualizado correctamente.": "Canonical actualizado correctamente.",
+      "No se pudo guardar el archivo. Verifica que tengas el scope write_themes.": "No se pudo guardar el archivo. Verifica que tengas el scope write_themes.",
       "Error de red al guardar el texto alternativo.": "Error de red al guardar el texto alternativo.",
       "Intención no válida.": "Intención no válida."
     },
@@ -321,7 +322,7 @@ const dict = {
     permErrorTitle: "⚠️ Shopify Permissions Error",
     permErrorDesc: "Shopify has blocked read access to certain data (e.g., Pages or Blogs). To fix this:",
     permError1: "Open your shopify.app.toml file",
-    permError2: "Make sure you have these scopes:",
+    permError2: "Make sure you have these scopes: write_products, read_online_store_pages, write_online_store_pages, read_content, write_content, write_metaobjects, write_metaobject_definitions, read_themes, write_themes",
     permError3: "Stop the server terminal and run npm run dev again",
     permErrorDetails: "View technical error details",
     tabs: { products: "📦 Products", collections: "📂 Collections", pages: "📄 Pages", blogs: "📝 Blog", images: "🖼️ Images (ALT)", guide: "📚 SEO Guide" },
@@ -348,6 +349,7 @@ const dict = {
       "Recurso incluido en el Sitemap.": "Resource included in the Sitemap.",
       "Alt guardado exitosamente.": "Alt saved successfully.",
       "Canonical actualizado correctamente.": "Canonical updated successfully.",
+      "No se pudo guardar el archivo. Verifica que tengas el scope write_themes.": "Could not save file. Verify you have the write_themes scope.",
       "Error de red al guardar el texto alternativo.": "Network error while saving alternative text.",
       "Intención no válida.": "Invalid intent."
     },
@@ -367,7 +369,7 @@ const dict = {
     permErrorTitle: "⚠️ Erro de Permissões no Shopify",
     permErrorDesc: "O Shopify bloqueou o acesso de leitura a determinados dados (por exemplo, Páginas ou Blogs). Para corrigir isso:",
     permError1: "Abra o seu arquivo shopify.app.toml",
-    permError2: "Certifique-se de ter esses escopos:",
+    permError2: "Certifique-se de ter esses escopos: write_products, read_online_store_pages, write_online_store_pages, read_content, write_content, write_metaobjects, write_metaobject_definitions, read_themes, write_themes",
     permError3: "Pare o terminal do servidor e execute npm run dev novamente",
     permErrorDetails: "Ver detalhes técnicos do erro",
     tabs: { products: "📦 Produtos", collections: "📂 Coleções", pages: "📄 Páginas", blogs: "📝 Blog", images: "🖼️ Imagens (ALT)", guide: "📚 Guia SEO" },
@@ -394,6 +396,7 @@ const dict = {
       "Recurso incluido en el Sitemap.": "Recurso incluído no Sitemap.",
       "Alt guardado exitosamente.": "Alt salvo com sucesso.",
       "Canonical actualizado correctamente.": "Canônica atualizada com sucesso.",
+      "No se pudo guardar el archivo. Verifica que tengas el scope write_themes.": "Não foi possível salvar o arquivo. Verifique se você possui o escopo write_themes.",
       "Error de red al guardar el texto alternativo.": "Erro de rede ao salvar texto alternativo.",
       "Intención no válida.": "Intenção inválida."
     },
@@ -412,7 +415,8 @@ const dict = {
 // 4. INTERFAZ DE USUARIO
 // ==========================================
 export default function CompleteSEOApp() {
-  const { shop, products, collections, pages, articles, totalScore, apiErrors, imagesWithoutAlt } = useLoaderData<typeof loader>();
+  const loaderData = useLoaderData<typeof loader>();
+  const { shop, products, collections, pages, articles, totalScore, apiErrors, imagesWithoutAlt } = loaderData;
   
   const fetcher = useFetcher<any>();
   const isSubmitting = fetcher.state !== "idle";
@@ -487,6 +491,41 @@ export default function CompleteSEOApp() {
   const [previewDevice, setPreviewDevice] = useState<"desktop" | "mobile">("desktop");
   const [imageAlts, setImageAlts] = useState<Record<string, string>>({});
 
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 100;
+
+  const getPaginatedData = (data: any[]) => {
+    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+    return data.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+  };
+
+  const renderPagination = (dataLength: number) => {
+    const totalPages = Math.ceil(dataLength / ITEMS_PER_PAGE);
+    if (totalPages <= 1) return null;
+    
+    return (
+      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "10px", padding: "16px", borderTop: "1px solid #e1e3e5" }}>
+        <button 
+          disabled={currentPage === 1} 
+          onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+          style={{ padding: "6px 12px", borderRadius: "4px", border: "1px solid #c9cccf", backgroundColor: currentPage === 1 ? "#f6f6f7" : "#fff", cursor: currentPage === 1 ? "not-allowed" : "pointer", fontSize: "14px", color: "#202223" }}
+        >
+          &laquo;
+        </button>
+        <span style={{ fontSize: "14px", color: "#6d7175" }}>
+          {currentPage} / {totalPages}
+        </span>
+        <button 
+          disabled={currentPage === totalPages} 
+          onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+          style={{ padding: "6px 12px", borderRadius: "4px", border: "1px solid #c9cccf", backgroundColor: currentPage === totalPages ? "#f6f6f7" : "#fff", cursor: currentPage === totalPages ? "not-allowed" : "pointer", fontSize: "14px", color: "#202223" }}
+        >
+          &raquo;
+        </button>
+      </div>
+    );
+  };
+  
   const executeApiCall = (body: Record<string, string>) => {
     fetcher.submit(body, { method: "POST" });
   };
@@ -640,11 +679,11 @@ export default function CompleteSEOApp() {
             collections: `${t.tabs.collections} (${collections.length})`, 
             pages: `${t.tabs.pages} (${pages.length})`, 
             blogs: `${t.tabs.blogs} (${articles.length})`, 
-            images: `${t.tabs.images} (${imagesWithoutAlt.length})`, 
+            images: `${t.tabs.images} (${imagesWithoutAlt.length})`,
             guide: t.tabs.guide 
           };
           return (
-            <button key={tab} onClick={() => setActiveTab(tab as any)} style={{ padding: "8px 16px", borderRadius: "8px", border: "none", backgroundColor: activeTab === tab ? "#e1e3e5" : "transparent", fontWeight: activeTab === tab ? "600" : "400", cursor: "pointer", fontSize: "14px", color: "#202223", whiteSpace: "nowrap" }}>
+            <button key={tab} onClick={() => { setActiveTab(tab as any); setCurrentPage(1); }} style={{ padding: "8px 16px", borderRadius: "8px", border: "none", backgroundColor: activeTab === tab ? "#e1e3e5" : "transparent", fontWeight: activeTab === tab ? "600" : "400", cursor: "pointer", fontSize: "14px", color: "#202223", whiteSpace: "nowrap" }}>
               {labels[tab]}
             </button>
           );
@@ -669,7 +708,7 @@ export default function CompleteSEOApp() {
               {products.length === 0 ? (
                 <tr><td colSpan={6} style={{ padding: "20px", textAlign: "center", color: "#6d7175" }}>{t.empty.products}</td></tr>
               ) : (
-                products.map((prod) => (
+                getPaginatedData(products).map((prod) => (
                   <tr key={prod.id} style={{ borderBottom: "1px solid #f1f2f4" }}>
                     <td style={{ padding: "12px 16px" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
@@ -718,6 +757,7 @@ export default function CompleteSEOApp() {
               )}
             </tbody>
           </table>
+          {renderPagination(products.length)}
         </s-card>
       )}
       {activeTab === "collections" && (
@@ -737,7 +777,7 @@ export default function CompleteSEOApp() {
               {collections.length === 0 ? (
                 <tr><td colSpan={6} style={{ padding: "20px", textAlign: "center", color: "#6d7175" }}>{t.empty.collections}</td></tr>
               ) : (
-                collections.map((col) => (
+                getPaginatedData(collections).map((col) => (
                   <tr key={col.id} style={{ borderBottom: "1px solid #f1f2f4" }}>
                     <td style={{ padding: "12px 16px" }}>
                       <div style={{ fontWeight: "600", fontSize: "14px", marginBottom: "4px" }}>{col.title}</div>
@@ -772,6 +812,7 @@ export default function CompleteSEOApp() {
               )}
             </tbody>
           </table>
+          {renderPagination(collections.length)}
         </s-card>
       )}
       {activeTab === "pages" && (
@@ -791,7 +832,7 @@ export default function CompleteSEOApp() {
               {pages.length === 0 ? (
                 <tr><td colSpan={6} style={{ padding: "20px", textAlign: "center", color: "#6d7175" }}>{t.empty.pages}</td></tr>
               ) : (
-                pages.map((pg) => (
+                getPaginatedData(pages).map((pg) => (
                   <tr key={pg.id} style={{ borderBottom: "1px solid #f1f2f4" }}>
                     <td style={{ padding: "12px 16px" }}>
                       <div style={{ fontWeight: "600", fontSize: "14px", marginBottom: "4px" }}>{pg.title}</div>
@@ -826,6 +867,7 @@ export default function CompleteSEOApp() {
               )}
             </tbody>
           </table>
+          {renderPagination(pages.length)}
         </s-card>
       )}
       {activeTab === "blogs" && (
@@ -846,7 +888,7 @@ export default function CompleteSEOApp() {
               {articles.length === 0 ? (
                 <tr><td colSpan={7} style={{ padding: "20px", textAlign: "center", color: "#6d7175" }}>{t.empty.articles}</td></tr>
               ) : (
-                articles.map((art) => (
+                getPaginatedData(articles).map((art) => (
                   <tr key={art.id} style={{ borderBottom: "1px solid #f1f2f4" }}>
                     <td style={{ padding: "12px 16px" }}>
                       <div style={{ fontWeight: "600", fontSize: "14px", marginBottom: "4px" }}>{art.title}</div>
@@ -883,6 +925,7 @@ export default function CompleteSEOApp() {
               )}
             </tbody>
           </table>
+          {renderPagination(articles.length)}
         </s-card>
       )}
       
@@ -900,7 +943,7 @@ export default function CompleteSEOApp() {
               {imagesWithoutAlt.length === 0 ? (
                 <tr><td colSpan={3} style={{ padding: "20px", textAlign: "center", color: "#6d7175" }}>{t.empty.images}</td></tr>
               ) : (
-                imagesWithoutAlt.map((img) => (
+                getPaginatedData(imagesWithoutAlt).map((img) => (
                   <tr key={img.mediaId} style={{ borderBottom: "1px solid #f1f2f4" }}>
                     <td style={{ padding: "12px 16px" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
@@ -949,6 +992,7 @@ export default function CompleteSEOApp() {
               )}
             </tbody>
           </table>
+          {renderPagination(imagesWithoutAlt.length)}
         </s-card>
       )}
 
@@ -982,7 +1026,7 @@ export default function CompleteSEOApp() {
               <p style={{ margin: 0, color: "#6d7175", fontSize: "14px", lineHeight: "1.5" }}>{t.guide.indexDesc}</p>
             </div>
 
-            <div>
+            <div style={{ marginBottom: "20px" }}>
               <h4 style={{ fontSize: "14px", fontWeight: "600", margin: "0 0 6px 0", color: "#202223" }}>{t.guide.imgTitle}</h4>
               <p style={{ margin: 0, color: "#6d7175", fontSize: "14px", lineHeight: "1.5" }}>{t.guide.imgDesc}</p>
             </div>
