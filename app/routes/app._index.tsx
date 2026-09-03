@@ -230,9 +230,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       }
       
       if (errors && errors.length > 0) {
-        return Response.json({ error: errors[0].message });
+        return { error: errors[0].message };
       }
-      return Response.json({ success: true, message: "Metadatos SEO guardados correctamente en Shopify." });
+      return { success: true, message: "Metadatos SEO guardados correctamente en Shopify." };
     }
 
     if (intent === "toggle_sitemap") {
@@ -253,16 +253,63 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       const errors = json.data?.metafieldsSet?.userErrors || [];
 
       if (errors && errors.length > 0) {
-        return Response.json({ error: errors[0].message });
+        return { error: errors[0].message };
       }
 
-      return Response.json({ success: true, message: hideAction === "hide" ? "Recurso excluido del Sitemap e indexación (noindex)." : "Recurso incluido en el Sitemap." });
+      return { success: true, message: hideAction === "hide" ? "Recurso excluido del Sitemap e indexación (noindex)." : "Recurso incluido en el Sitemap." };
     }
 
     if (intent === "save_canonical_url") {
       const resourceId = formData.get("resourceId") as string;
-      const canonicalUrl = formData.get("canonicalUrl") as string;
-      
+      const rawCanonical = (formData.get("canonicalUrl") as string) || "";
+      const canonicalUrl = rawCanonical.trim();
+
+      // SI SE DEJA EN BLANCO: Se elimina el metafield para que Shopify vuelva a la URL por defecto
+      if (!canonicalUrl) {
+        const response = await admin.graphql(
+          `#graphql
+          mutation deleteCanonicalMetafield($metafields: [MetafieldIdentifierInput!]!) {
+            metafieldsDelete(metafields: $metafields) {
+              deletedMetafields {
+                key
+                namespace
+                ownerId
+              }
+              userErrors {
+                field
+                message
+              }
+            }
+          }`,
+          {
+            variables: {
+              metafields: [
+                {
+                  ownerId: resourceId,
+                  namespace: "seo",
+                  key: "canonical_url"
+                }
+              ]
+            }
+          }
+        );
+        const json = await response.json();
+        const errors = json.data?.metafieldsDelete?.userErrors || [];
+
+        // Ignorar si el error dice que el metafield no existía previamente
+        const realErrors = errors.filter((e: any) => 
+          !e.message?.toLowerCase().includes("not exist") && 
+          !e.message?.toLowerCase().includes("not found")
+        );
+
+        if (realErrors.length > 0) {
+          return { error: realErrors[0].message };
+        }
+
+        return { success: true, message: "URL Canonical restablecida al valor por defecto." };
+      }
+
+      // SI TIENE UNA URL: Se guarda normalmente
       const response = await admin.graphql(
         `#graphql
         mutation setCanonicalMetafield($metafields: [MetafieldsSetInput!]!) { 
@@ -276,10 +323,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       const errors = json.data?.metafieldsSet?.userErrors || [];
 
       if (errors && errors.length > 0) {
-        return Response.json({ error: errors[0].message });
+        return { error: errors[0].message };
       }
 
-      return Response.json({ success: true, message: "Canonical actualizado correctamente." });
+      return { success: true, message: "Canonical actualizado correctamente." };
     }
 
     if (intent === "update_single_alt_text") {
@@ -300,19 +347,19 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         
         const result = await response.json(); 
         if (result.data?.productUpdateMedia?.mediaUserErrors?.length > 0) {
-          return Response.json({ error: result.data.productUpdateMedia.mediaUserErrors[0].message });
+          return { error: result.data.productUpdateMedia.mediaUserErrors[0].message };
         }
         
-        return Response.json({ success: true, message: "Alt guardado exitosamente." });
+        return { success: true, message: "Alt guardado exitosamente." };
       } catch (e: any) {
-        return Response.json({ error: "Error de red al guardar el texto alternativo." });
+        return { error: "Error de red al guardar el texto alternativo." };
       }
     }
 
-    return Response.json({ error: "Intención no válida." });
+    return { error: "Intención no válida." };
   } catch (error: any) {
     console.error("Error en Action:", error);
-    return Response.json({ error: error.message || "Error al procesar la acción en Shopify." });
+    return { error: error.message || "Error al procesar la acción en Shopify." };
   }
 };
 
@@ -354,6 +401,7 @@ const dict = {
       "Recurso incluido en el Sitemap.": "Recurso incluido en el Sitemap.",
       "Alt guardado exitosamente.": "Alt guardado exitosamente.",
       "Canonical actualizado correctamente.": "Canonical actualizado correctamente.",
+      "URL Canonical restablecida al valor por defecto.": "URL Canonical restablecida al valor por defecto.",
       "No se pudo guardar el archivo. Verifica que tengas el scope write_themes.": "No se pudo guardar el archivo. Verifica que tengas el scope write_themes.",
       "Error de red al guardar el texto alternativo.": "Error de red al guardar el texto alternativo.",
       "Intención no válida.": "Intención no válida."
@@ -401,6 +449,7 @@ const dict = {
       "Recurso incluido en el Sitemap.": "Resource included in the Sitemap.",
       "Alt guardado exitosamente.": "Alt saved successfully.",
       "Canonical actualizado correctamente.": "Canonical updated successfully.",
+      "URL Canonical restablecida al valor por defecto.": "Canonical URL successfully reset to default.",
       "No se pudo guardar el archivo. Verifica que tengas el scope write_themes.": "Could not save file. Verify you have the write_themes scope.",
       "Error de red al guardar el texto alternativo.": "Network error while saving alternative text.",
       "Intención no válida.": "Invalid intent."
@@ -448,12 +497,13 @@ const dict = {
       "Recurso incluido en el Sitemap.": "Recurso incluído no Sitemap.",
       "Alt guardado exitosamente.": "Alt salvo com sucesso.",
       "Canonical actualizado correctamente.": "Canônica atualizada com sucesso.",
+      "URL Canonical restablecida al valor por defecto.": "URL Canônica redefinida com sucesso para o padrão.",
       "No se pudo guardar el archivo. Verifica que tengas el scope write_themes.": "Não foi possível salvar o arquivo. Verifique se você possui o escopo write_themes.",
       "Error de red al guardar texto alternativo.": "Erro de rede ao salvar texto alternativo.",
       "Intención no válida.": "Intenção inválida."
     },
     backendIssues: {
-      "Título corto (<30)": "Título curto (<30)",
+      "Título corto (<30)": "Título corto (<30)",
       "Título longo (>60)": "Título longo (>60)",
       "Sin meta descripción": "Sem meta descrição",
       "Meta descripción fuera de rango": "Meta descrição fora do limite",
@@ -573,7 +623,19 @@ export default function CompleteSEOApp() {
     );
   };
   
-  const executeApiCall = (body: Record<string, string>) => {
+  // INYECCIÓN DE TOKEN FRESCO Y PRESERVACIÓN DE PARÁMETROS DE SESIÓN
+  const executeApiCall = async (body: Record<string, string>) => {
+    try {
+      if (typeof window !== "undefined" && (window as any).shopify?.idToken) {
+        const token = await (window as any).shopify.idToken();
+        if (token) {
+          body.id_token = token;
+        }
+      }
+    } catch (e) {
+      console.error("Error al obtener token de sesión:", e);
+    }
+
     const params = new URLSearchParams(window.location.search);
     params.set("index", "");
 
