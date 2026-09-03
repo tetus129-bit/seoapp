@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
-import { useLoaderData, useFetcher } from "react-router";
+import { useLoaderData, useFetcher, useRouteError } from "react-router";
 import { authenticate } from "../shopify.server";
+import { boundary } from "@shopify/shopify-app-remix/server";
 
 // ==========================================
 // 1. CARGA DE DATOS (LOADER) - Leer de Shopify
@@ -1200,3 +1201,12 @@ export default function CompleteSEOApp() {
     </s-page>
   );
 }
+
+export function ErrorBoundary() {
+  const error = useRouteError();
+  return boundary.error(error);
+}
+
+export const headers = (headersArgs: any) => {
+  return boundary.headers(headersArgs);
+};
