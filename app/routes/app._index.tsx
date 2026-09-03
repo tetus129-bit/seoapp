@@ -8,7 +8,7 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 // 1. CARGA DE DATOS (LOADER) - Leer de Shopify
 // ==========================================
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { admin, session } = await authenticate.admin(request);
+  const { admin } = await authenticate.admin(request);
   
   let shop = { name: "Mi Tienda", myshopifyDomain: "" };
   let products: any[] = [];
@@ -70,7 +70,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         const defaultCanonical = `https://${shop.myshopifyDomain}/products/${node.handle}`;
         const customCanonical = node.canonicalUrl?.value || "";
 
-        return { id: node.id, numericId: node.id.split("/").pop(), title: node.title, handle: node.handle, status: node.status, imageUrl: node.featuredImage?.url || null, imageAlt: node.featuredImage?.altText || "", hasAlt, seoTitle, seoDesc, isHidden, score, issues, defaultCanonical, customCanonical };
+        return { id: node.id, numericId: String(node.id.split("/").pop()), title: node.title, handle: node.handle, status: node.status, imageUrl: node.featuredImage?.url || null, imageAlt: node.featuredImage?.altText || "", hasAlt, seoTitle, seoDesc, isHidden, score, issues, defaultCanonical, customCanonical };
       });
     }
 
@@ -90,7 +90,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         const defaultCanonical = `https://${shop.myshopifyDomain}/collections/${node.handle}`;
         const customCanonical = node.canonicalUrl?.value || "";
 
-        return { id: node.id, numericId: node.id.split("/").pop(), title: node.title, handle: node.handle, seoTitle, seoDesc, isHidden, score, issues, defaultCanonical, customCanonical };
+        return { id: node.id, numericId: String(node.id.split("/").pop()), title: node.title, handle: node.handle, seoTitle, seoDesc, isHidden, score, issues, defaultCanonical, customCanonical };
       });
     }
   } catch (err: any) { apiErrors.push("Conexión Productos: " + (err.message || String(err))); }
@@ -118,7 +118,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         const defaultCanonical = `https://${shop.myshopifyDomain}/pages/${node.handle}`;
         const customCanonical = node.canonicalUrl?.value || "";
 
-        return { id: node.id, numericId: node.id.split("/").pop(), title: node.title, handle: node.handle, seoTitle, seoDesc, isHidden, score, issues, defaultCanonical, customCanonical };
+        return { id: node.id, numericId: String(node.id.split("/").pop()), title: node.title, handle: node.handle, seoTitle, seoDesc, isHidden, score, issues, defaultCanonical, customCanonical };
       });
     }
   } catch (err: any) { apiErrors.push("Conexión Páginas: " + (err.message || String(err))); }
@@ -151,7 +151,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
           const defaultCanonical = `https://${shop.myshopifyDomain}/blogs/${blogNode.handle}/${artNode.handle}`;
           const customCanonical = artNode.canonicalUrl?.value || "";
 
-          articles.push({ id: artNode.id, numericId: artNode.id.split("/").pop(), title: artNode.title, handle: artNode.handle, blogTitle: blogNode.title, blogHandle: blogNode.handle, authorName: artNode.author?.name || "Autor", imageUrl: artNode.image?.url || null, imageAlt: artNode.image?.altText || "", seoTitle, seoDesc, isHidden, score, issues, defaultCanonical, customCanonical });
+          articles.push({ id: artNode.id, numericId: String(artNode.id.split("/").pop()), title: artNode.title, handle: artNode.handle, blogTitle: blogNode.title, blogHandle: blogNode.handle, authorName: artNode.author?.name || "Autor", imageUrl: artNode.image?.url || null, imageAlt: artNode.image?.altText || "", seoTitle, seoDesc, isHidden, score, issues, defaultCanonical, customCanonical });
         });
       });
     }
@@ -172,7 +172,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 // 2. ACCIONES (ACTION) - Escribir en Shopify
 // ==========================================
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { admin, session } = await authenticate.admin(request);
+  const { admin } = await authenticate.admin(request);
   const formData = await request.formData();
   const intent = formData.get("intent") as string;
 
@@ -186,35 +186,53 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       let errors: any[] = [];
       if (resourceType === "product") {
         const response = await admin.graphql(
-          ` mutation updateProductSEO($input: ProductInput!) { productUpdate(input: $input) { userErrors { field message } } }`,
+          `#graphql
+          mutation updateProductSEO($input: ProductInput!) { 
+            productUpdate(input: $input) { 
+              userErrors { field message } 
+            } 
+          }`,
           { variables: { input: { id: resourceId, seo: { title: seoTitle, description: seoDesc } } } }
         );
         const json = await response.json();
         errors = json.data?.productUpdate?.userErrors || [];
       } else if (resourceType === "collection") {
         const response = await admin.graphql(
-          ` mutation updateCollectionSEO($input: CollectionInput!) { collectionUpdate(input: $input) { userErrors { field message } } }`,
+          `#graphql
+          mutation updateCollectionSEO($input: CollectionInput!) { 
+            collectionUpdate(input: $input) { 
+              userErrors { field message } 
+            } 
+          }`,
           { variables: { input: { id: resourceId, seo: { title: seoTitle, description: seoDesc } } } }
         );
         const json = await response.json();
         errors = json.data?.collectionUpdate?.userErrors || [];
       } else if (resourceType === "page" || resourceType === "article") {
         const response = await admin.graphql(
-          ` mutation updateContentSEO($metafields: [MetafieldsSetInput!]!) { metafieldsSet(metafields: $metafields) { userErrors { field message } } }`,
-          { variables: { metafields: [
-            { ownerId: resourceId, namespace: "global", key: "title_tag", value: seoTitle, type: "single_line_text_field" },
-            { ownerId: resourceId, namespace: "global", key: "description_tag", value: seoDesc, type: "multi_line_text_field" }
-          ] } }
+          `#graphql
+          mutation updateContentSEO($metafields: [MetafieldsSetInput!]!) { 
+            metafieldsSet(metafields: $metafields) { 
+              userErrors { field message } 
+            } 
+          }`,
+          { 
+            variables: { 
+              metafields: [
+                { ownerId: resourceId, namespace: "global", key: "title_tag", value: seoTitle, type: "single_line_text_field" },
+                { ownerId: resourceId, namespace: "global", key: "description_tag", value: seoDesc, type: "multi_line_text_field" }
+              ] 
+            } 
+          }
         );
         const json = await response.json();
         errors = json.data?.metafieldsSet?.userErrors || [];
       }
       
-      // Si Shopify rechaza la mutación, enviamos el error real al frontend
       if (errors && errors.length > 0) {
-        return { error: errors[0].message };
+        return Response.json({ error: errors[0].message });
       }
-      return { success: true, message: "Metadatos SEO guardados correctamente en Shopify." };
+      return Response.json({ success: true, message: "Metadatos SEO guardados correctamente en Shopify." });
     }
 
     if (intent === "toggle_sitemap") {
@@ -223,12 +241,22 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       const value = hideAction === "hide" ? "1" : "0";
 
       const response = await admin.graphql(
-        ` mutation setSEOHiddenMetafield($metafields: [MetafieldsSetInput!]!) { metafieldsSet(metafields: $metafields) { userErrors { field message } } }`,
+        `#graphql
+        mutation setSEOHiddenMetafield($metafields: [MetafieldsSetInput!]!) { 
+          metafieldsSet(metafields: $metafields) { 
+            userErrors { field message } 
+          } 
+        }`,
         { variables: { metafields: [{ ownerId: resourceId, namespace: "seo", key: "hidden", value: value, type: "number_integer" }] } }
       );
-      await response.json(); 
+      const json = await response.json();
+      const errors = json.data?.metafieldsSet?.userErrors || [];
 
-      return ({ success: true, message: hideAction === "hide" ? "Recurso excluido del Sitemap e indexación (noindex)." : "Recurso incluido en el Sitemap." });
+      if (errors && errors.length > 0) {
+        return Response.json({ error: errors[0].message });
+      }
+
+      return Response.json({ success: true, message: hideAction === "hide" ? "Recurso excluido del Sitemap e indexación (noindex)." : "Recurso incluido en el Sitemap." });
     }
 
     if (intent === "save_canonical_url") {
@@ -236,12 +264,22 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       const canonicalUrl = formData.get("canonicalUrl") as string;
       
       const response = await admin.graphql(
-        ` mutation setCanonicalMetafield($metafields: [MetafieldsSetInput!]!) { metafieldsSet(metafields: $metafields) { userErrors { field message } } }`,
+        `#graphql
+        mutation setCanonicalMetafield($metafields: [MetafieldsSetInput!]!) { 
+          metafieldsSet(metafields: $metafields) { 
+            userErrors { field message } 
+          } 
+        }`,
         { variables: { metafields: [{ ownerId: resourceId, namespace: "seo", key: "canonical_url", value: canonicalUrl, type: "single_line_text_field" }] } }
       );
-      await response.json();
+      const json = await response.json();
+      const errors = json.data?.metafieldsSet?.userErrors || [];
 
-      return ({ success: true, message: "Canonical actualizado correctamente." });
+      if (errors && errors.length > 0) {
+        return Response.json({ error: errors[0].message });
+      }
+
+      return Response.json({ success: true, message: "Canonical actualizado correctamente." });
     }
 
     if (intent === "update_single_alt_text") {
@@ -251,26 +289,30 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
       try {
         const response = await admin.graphql(
-          `mutation updateMediaAlt($media: [UpdateMediaInput!]!, $productId: ID!) { productUpdateMedia(media: $media, productId: $productId) { mediaUserErrors { field message } } }`,
+          `#graphql
+          mutation updateMediaAlt($media: [UpdateMediaInput!]!, $productId: ID!) { 
+            productUpdateMedia(media: $media, productId: $productId) { 
+              mediaUserErrors { field message } 
+            } 
+          }`,
           { variables: { productId, media: [{ id: mediaId, alt: altText }] } }
         );
         
         const result = await response.json(); 
-        
         if (result.data?.productUpdateMedia?.mediaUserErrors?.length > 0) {
-          return ({ error: result.data.productUpdateMedia.mediaUserErrors[0].message });
+          return Response.json({ error: result.data.productUpdateMedia.mediaUserErrors[0].message });
         }
         
-        return ({ success: true, message: "Alt guardado exitosamente." });
+        return Response.json({ success: true, message: "Alt guardado exitosamente." });
       } catch (e: any) {
-        return ({ error: "Error de red al guardar el texto alternativo." });
+        return Response.json({ error: "Error de red al guardar el texto alternativo." });
       }
     }
 
-    return ({ error: "Intención no válida." });
+    return Response.json({ error: "Intención no válida." });
   } catch (error: any) {
     console.error("Error en Action:", error);
-    return ({ error: error.message || "Error al procesar la acción en Shopify." });
+    return Response.json({ error: error.message || "Error al procesar la acción en Shopify." });
   }
 };
 
@@ -407,7 +449,7 @@ const dict = {
       "Alt guardado exitosamente.": "Alt salvo com sucesso.",
       "Canonical actualizado correctamente.": "Canônica atualizada com sucesso.",
       "No se pudo guardar el archivo. Verifica que tengas el scope write_themes.": "Não foi possível salvar o arquivo. Verifique se você possui o escopo write_themes.",
-      "Error de red al guardar el texto alternativo.": "Erro de rede ao salvar texto alternativo.",
+      "Error de red al guardar texto alternativo.": "Erro de rede ao salvar texto alternativo.",
       "Intención no válida.": "Intenção inválida."
     },
     backendIssues: {
@@ -431,26 +473,22 @@ export default function CompleteSEOApp() {
   const fetcher = useFetcher<any>();
   const isSubmitting = fetcher.state !== "idle";
 
-  // ESTADO DE IDIOMA
   const [lang, setLang] = useState<"es" | "en" | "pt">("en");
 
-  // EFECTO: Recuperar idioma guardado de localStorage al cargar la app
   useEffect(() => {
     try {
       const storedLang = localStorage.getItem("seo_pro_lang");
       if (storedLang === "es" || storedLang === "en" || storedLang === "pt") {
         setLang(storedLang);
       }
-    } catch (e) {
-      // Ignorar si localStorage está bloqueado
-    }
+    } catch (e) {}
   }, []);
 
   const handleLangChange = (newLang: "es" | "en" | "pt") => {
     setLang(newLang);
     try {
       localStorage.setItem("seo_pro_lang", newLang);
-    } catch (e) { }
+    } catch (e) {}
   };
 
   const t = dict[lang];
@@ -474,7 +512,6 @@ export default function CompleteSEOApp() {
     seoDesc: string;
   } | null>(null);
 
-  // NUEVO ESTADO: Editor de Canonical URL
   const [editingCanonical, setEditingCanonical] = useState<{
     id: string;
     title: string;
@@ -537,7 +574,7 @@ export default function CompleteSEOApp() {
   };
   
   const executeApiCall = (body: Record<string, string>) => {
-    fetcher.submit(body, { method: "POST" });
+    fetcher.submit(body, { method: "POST", action: "." });
   };
 
   const handleOpenEditor = (item: any, type: "product" | "collection" | "page" | "article", parentHandle?: string) => {
@@ -1042,7 +1079,6 @@ export default function CompleteSEOApp() {
             </div>
           </s-card>
 
-          {/* NUEVA SECCIÓN DE ACTIVACIÓN DE CANONICALS */}
           <s-card style={{ padding: "24px", backgroundColor: "#f4f6f8", border: "1px solid #dfe3e8" }}>
             <h3 style={{ fontSize: "16px", fontWeight: "600", margin: "0 0 10px 0", color: "#202223" }}>{t.guide.canonicalTitle}</h3>
             <p style={{ margin: "0 0 16px 0", color: "#4d5156", fontSize: "14px", lineHeight: "1.6" }} dangerouslySetInnerHTML={{ __html: t.guide.canonicalDesc }}></p>
@@ -1112,7 +1148,7 @@ export default function CompleteSEOApp() {
             <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
               <button 
                 type="button" 
-                onClick={() => setEditingItem(null)}
+                onClick={() => setEditingItem(null)} 
                 style={{ padding: "8px 16px", borderRadius: "6px", border: "1px solid #c9cccf", backgroundColor: "#ffffff", color: "#202223", fontWeight: "600", cursor: "pointer", fontSize: "13px", fontFamily: "inherit" }}
               >
                 {t.modal.cancel}
@@ -1120,7 +1156,7 @@ export default function CompleteSEOApp() {
               <button 
                 type="button" 
                 disabled={isSubmitting} 
-                onClick={handleSaveMetadata}
+                onClick={handleSaveMetadata} 
                 style={{ padding: "8px 16px", borderRadius: "6px", border: "none", backgroundColor: isSubmitting ? "#e1e3e5" : "#2c6ecb", color: isSubmitting ? "#8c9196" : "#ffffff", fontWeight: "600", cursor: isSubmitting ? "not-allowed" : "pointer", fontSize: "13px", fontFamily: "inherit" }}
               >
                 {isSubmitting ? t.misc.saving : t.modal.save}
@@ -1189,7 +1225,7 @@ export default function CompleteSEOApp() {
             <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
               <button 
                 type="button" 
-                onClick={() => setEditingCanonical(null)}
+                onClick={() => setEditingCanonical(null)} 
                 style={{ padding: "8px 16px", borderRadius: "6px", border: "1px solid #c9cccf", backgroundColor: "#ffffff", color: "#202223", fontWeight: "600", cursor: "pointer", fontSize: "13px", fontFamily: "inherit" }}
               >
                 {t.modalCanonical.cancel}
@@ -1197,7 +1233,7 @@ export default function CompleteSEOApp() {
               <button 
                 type="button" 
                 disabled={isSubmitting} 
-                onClick={handleSaveCanonical}
+                onClick={handleSaveCanonical} 
                 style={{ padding: "8px 16px", borderRadius: "6px", border: "none", backgroundColor: isSubmitting ? "#e1e3e5" : "#2c6ecb", color: isSubmitting ? "#8c9196" : "#ffffff", fontWeight: "600", cursor: isSubmitting ? "not-allowed" : "pointer", fontSize: "13px", fontFamily: "inherit" }}
               >
                 {isSubmitting ? t.misc.saving : t.modalCanonical.save}
