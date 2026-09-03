@@ -172,23 +172,24 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 // 2. ACCIONES (ACTION) - Escribir en Shopify
 // ==========================================
 export const action = async ({ request }: ActionFunctionArgs) => {
-  // 1. Clonar para extraer el token sin consumir el body original
+  // 1. Extraemos el token fresco que enviaste desde tu frontend
   const clonedRequest = request.clone();
-  const formData = await clonedRequest.formData();
-  const idToken = formData.get("id_token") as string;
+  const formDatos = await clonedRequest.formData();
+  const idToken = formDatos.get("id_token") as string;
 
-  // 2. Si el frontend nos envió un token fresco, lo inyectamos interceptando la propiedad headers
-  // Usamos Object.defineProperty para NO destruir el objeto Request original de Remix.
+  // 2. Metemos ese token en las Cabeceras (Headers) de forma invisible
   if (idToken) {
     const newHeaders = new Headers(request.headers);
     newHeaders.set("Authorization", `Bearer ${idToken}`);
-    Object.defineProperty(request, 'headers', {
-      get: () => newHeaders
-    });
+    // Este truco inyecta el token sin destruir la petición (lo que causó el error 200 antes)
+    Object.defineProperty(request, 'headers', { get: () => newHeaders });
   }
 
-  // 3. Autenticar usando el objeto request original (ahora con los headers parcheados)
+  // 3. Shopify valida tu sesión usando el token fresco
   const { admin } = await authenticate.admin(request);
+  
+  // 4. Continuamos con el flujo normal de tu app
+  const formData = await request.formData();
   const intent = formData.get("intent") as string;
 
   try {
