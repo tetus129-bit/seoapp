@@ -3,6 +3,7 @@ import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 import { useLoaderData, useFetcher, useRevalidator, useRouteError } from "react-router";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
+import { Page, Card } from "@shopify/polaris";
 
 // ==========================================
 // 1. CARGA DE DATOS (LOADER) - Leer de Shopify
@@ -14,9 +15,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   let products: any[] = [];
   let collections: any[] = [];
   let pages: any[] = [];
-  let articles: any[] = [];
-  let imagesWithoutAlt: any[] = []; 
-  let apiErrors: string[] = []; 
+  const articles: any[] = [];
+  const imagesWithoutAlt: any[] = []; 
+  const apiErrors: string[] = []; 
   
   try {
     const mainResponse = await admin.graphql(
@@ -33,7 +34,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         }
       `
     );
-    const mainJson = await mainResponse.json();
+    const mainJson = (await mainResponse.json()) as any;
     
     if (mainJson.errors) apiErrors.push("Error en Productos: " + mainJson.errors.map((e: any) => e.message).join(", "));
     
@@ -62,7 +63,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         const isHidden = node.metafield?.value === "1";
         
         let score = 100;
-        let issues = [];
+        const issues = [];
         if (seoTitle.length < 30 || seoTitle.length > 60) { score -= 30; issues.push(seoTitle.length < 30 ? "Título corto (<30)" : "Título largo (>60)"); }
         if (!seoDesc || seoDesc.length < 70 || seoDesc.length > 160) { score -= 40; issues.push(!seoDesc ? "Sin meta descripción" : "Meta descripción fuera de rango"); }
         if (!hasAlt) { score -= 20; issues.push("Imágenes sin texto ALT"); }
@@ -83,7 +84,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         const isHidden = node.metafield?.value === "1";
         
         let score = 100;
-        let issues = [];
+        const issues = [];
         if (seoTitle.length < 30 || seoTitle.length > 60) { score -= 30; issues.push(seoTitle.length < 30 ? "Título corto (<30)" : "Título largo (>60)"); }
         if (!seoDesc || seoDesc.length < 70 || seoDesc.length > 160) { score -= 40; issues.push(!seoDesc ? "Sin meta descripción" : "Meta descripción fuera de rango"); }
         if (score < 0) score = 0;
@@ -100,7 +101,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     const pagesResponse = await admin.graphql(
       ` query getPagesSEO { pages(first: 50) { edges { node { id title handle bodySummary seoTitleTag: metafield(namespace: "global", key: "title_tag") { value } seoDescTag: metafield(namespace: "global", key: "description_tag") { value } metafield(namespace: "seo", key: "hidden") { id value } canonicalUrl: metafield(namespace: "seo", key: "canonical_url") { id value } } } } }`
     );
-    const pagesJson = await pagesResponse.json();
+    const pagesJson = (await pagesResponse.json()) as any;
     
     if (pagesJson.errors) apiErrors.push("Error Permisos de Páginas: " + pagesJson.errors.map((e: any) => e.message).join(", "));
     
@@ -111,7 +112,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         const seoDesc = node.seoDescTag?.value || (node.bodySummary ? node.bodySummary.slice(0, 160) : "");
         const isHidden = node.metafield?.value === "1";
         let score = 100;
-        let issues = [];
+        const issues = [];
         if (seoTitle.length < 30 || seoTitle.length > 60) { score -= 30; issues.push(seoTitle.length < 30 ? "Título corto (<30)" : "Título largo (>60)"); }
         if (!seoDesc || seoDesc.length < 70 || seoDesc.length > 160) { score -= 40; issues.push(!seoDesc ? "Sin meta descripción" : "Meta descripción fuera de rango"); }
         if (score < 0) score = 0;
@@ -128,7 +129,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     const blogsResponse = await admin.graphql(
       ` query getBlogsSEO { blogs(first: 10) { edges { node { id title handle articles(first: 50) { edges { node { id title handle summary image { url altText } seoTitleTag: metafield(namespace: "global", key: "title_tag") { value } seoDescTag: metafield(namespace: "global", key: "description_tag") { value } metafield(namespace: "seo", key: "hidden") { id value } canonicalUrl: metafield(namespace: "seo", key: "canonical_url") { id value } } } } } } } }`
     );
-    const blogsJson = await blogsResponse.json();
+    const blogsJson = (await blogsResponse.json()) as any;
     
     if (blogsJson.errors) apiErrors.push("Error Permisos de Blog: " + blogsJson.errors.map((e: any) => e.message).join(", "));
     
@@ -143,7 +144,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
           const hasAlt = artNode.image?.altText && artNode.image.altText.trim() !== "";
           
           let score = 100;
-          let issues = [];
+          const issues = [];
           if (seoTitle.length < 30 || seoTitle.length > 60) { score -= 30; issues.push(seoTitle.length < 30 ? "Título corto (<30)" : "Título largo (>60)"); }
           if (!seoDesc || seoDesc.length < 70 || seoDesc.length > 160) { score -= 40; issues.push(!seoDesc ? "Sin meta descripción" : "Meta descripción fuera de rango"); }
           if (artNode.image && !hasAlt) { score -= 20; issues.push("Imagen destacada sin texto ALT"); }
@@ -197,7 +198,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         }`,
         { variables: { metafields: [{ ownerId: resourceId, namespace: "seo", key: "hidden", value: value, type: "number_integer" }] } }
       );
-      const json = await response.json();
+      const json = (await response.json()) as any;
       const errors = json.data?.metafieldsSet?.userErrors || [];
 
       if (errors && errors.length > 0) {
@@ -243,7 +244,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             }
           }
         );
-        const json = await response.json();
+        const json = await response.json() as any;
         const errors = json.data?.metafieldsDelete?.userErrors || [];
         const realErrors = errors.filter((e: any) => 
           !e.message?.toLowerCase().includes("not exist") && 
@@ -267,7 +268,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         }`,
         { variables: { metafields: [{ ownerId: resourceId, namespace: "seo", key: "canonical_url", value: canonicalUrl, type: "single_line_text_field" }] } }
       );
-      const json = await response.json();
+      const json = (await response.json()) as any;
       const errors = json.data?.metafieldsSet?.userErrors || [];
 
       if (errors && errors.length > 0) {
@@ -293,7 +294,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           { variables: { productId, media: [{ id: mediaId, alt: altText }] } }
         );
         
-        const result = await response.json(); 
+        const result = (await response.json()) as any; 
         if (result.data?.productUpdateMedia?.mediaUserErrors?.length > 0) {
           return { error: result.data.productUpdateMedia.mediaUserErrors[0].message };
         }
@@ -674,6 +675,17 @@ export default function CompleteSEOApp() {
     executeApiCall({ intent: "update_single_alt_text", productId, mediaId, altText });
   };
 
+  const handleSaveMetadata = () => {
+    if (!editingItem) return;
+    executeApiCall({ 
+      intent: "save_metadata", 
+      resourceId: editingItem.id, 
+      seoTitle: editingItem.seoTitle,
+      seoDesc: editingItem.seoDesc
+    });
+    setEditingItem(null);
+  };
+
   const getScoreColor = (score: number) => {
     if (score >= 80) return "#108043";
     if (score >= 50) return "#b98900";
@@ -730,11 +742,11 @@ export default function CompleteSEOApp() {
   };
 
   return (
-    <s-page title="SEO Pro All-in-One">
+    <Page title="SEO Pro All-in-One">
       
       {/* Banner de bienvenida y Score */}
       <div style={{ display: "flex", gap: "20px", marginBottom: "20px" }}>
-        <s-card style={{ flex: "2", padding: "20px", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+        <div style={{ flex: "2", padding: "20px", display: "flex", flexDirection: "column", justifyContent: "center", backgroundColor: "white", borderRadius: "8px", boxShadow: "0 0 0 1px rgba(63, 63, 68, 0.05), 0 1px 3px 0 rgba(63, 63, 68, 0.15)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
             <h1 style={{ fontSize: "20px", fontWeight: "600", margin: 0 }}>{t.greeting} {shop.name} 👋</h1>
             
@@ -753,12 +765,12 @@ export default function CompleteSEOApp() {
             </div>
           </div>
           <p style={{ margin: 0, color: "#6d7175" }}>{t.summary}</p>
-        </s-card>
-        <s-card style={{ flex: "1", padding: "20px", textAlign: "center", backgroundColor: getScoreColor(totalScore) + "10", border: `1px solid ${getScoreColor(totalScore)}40` }}>
+        </div>
+        <div style={{ flex: "1", padding: "20px", textAlign: "center", backgroundColor: getScoreColor(totalScore) + "10", border: `1px solid ${getScoreColor(totalScore)}40`, borderRadius: "8px" }}>
           <h2 style={{ fontSize: "14px", fontWeight: "600", margin: "0 0 10px 0", color: "#303030" }}>{t.globalHealth}</h2>
           <div style={{ fontSize: "42px", fontWeight: "700", color: getScoreColor(totalScore), lineHeight: "1", marginBottom: "8px" }}>{totalScore}<span style={{ fontSize: "20px" }}>/100</span></div>
           <div style={{ fontSize: "11px", color: "#6d7175", maxWidth: "250px", margin: "0 auto", lineHeight: "1.4" }}>{t.refreshMsg}</div>
-        </s-card>
+        </div>
       </div>
 
       {apiErrors && apiErrors.length > 0 && (
@@ -807,7 +819,7 @@ export default function CompleteSEOApp() {
 
       {/* Contenido de Pestañas */}
       {activeTab === "products" && (
-        <s-card style={{ padding: "0" }}>
+        <Card>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead style={{ backgroundColor: "#f6f6f7", borderBottom: "1px solid #e1e3e5" }}>
               <tr>
@@ -867,10 +879,10 @@ export default function CompleteSEOApp() {
             </tbody>
           </table>
           {renderPagination(products.length)}
-        </s-card>
+        </Card>
       )}
       {activeTab === "collections" && (
-        <s-card style={{ padding: "0" }}>
+        <Card>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead style={{ backgroundColor: "#f6f6f7", borderBottom: "1px solid #e1e3e5" }}>
               <tr>
@@ -916,10 +928,10 @@ export default function CompleteSEOApp() {
             </tbody>
           </table>
           {renderPagination(collections.length)}
-        </s-card>
+        </Card>
       )}
       {activeTab === "pages" && (
-        <s-card style={{ padding: "0" }}>
+        <Card>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead style={{ backgroundColor: "#f6f6f7", borderBottom: "1px solid #e1e3e5" }}>
               <tr>
@@ -965,10 +977,10 @@ export default function CompleteSEOApp() {
             </tbody>
           </table>
           {renderPagination(pages.length)}
-        </s-card>
+        </Card>
       )}
       {activeTab === "blogs" && (
-        <s-card style={{ padding: "0" }}>
+        <Card>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead style={{ backgroundColor: "#f6f6f7", borderBottom: "1px solid #e1e3e5" }}>
               <tr>
@@ -1017,11 +1029,11 @@ export default function CompleteSEOApp() {
             </tbody>
           </table>
           {renderPagination(articles.length)}
-        </s-card>
+        </Card>
       )}
       
       {activeTab === "images" && (
-        <s-card style={{ padding: "0" }}>
+        <Card>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead style={{ backgroundColor: "#f6f6f7", borderBottom: "1px solid #e1e3e5" }}>
               <tr>
@@ -1084,7 +1096,7 @@ export default function CompleteSEOApp() {
             </tbody>
           </table>
           {renderPagination(imagesWithoutAlt.length)}
-        </s-card>
+        </Card>
       )}
 
       {/* GUÍA SEO MULTILINGÜE */}
@@ -1133,7 +1145,7 @@ export default function CompleteSEOApp() {
             </div>
           </div>
 
-          <s-card style={{ padding: "24px" }}>
+          <div style={{ backgroundColor: "#ffffff", padding: "24px", borderRadius: "8px", boxShadow: "0 0 0 1px rgba(63, 63, 68, 0.05), 0 1px 3px 0 rgba(63, 63, 68, 0.15)" }}>
             <h3 style={{ fontSize: "16px", fontWeight: "600", margin: "0 0 20px 0" }}>{t.guide.howTo}</h3>
             
             <div style={{ marginBottom: "20px" }}>
@@ -1155,9 +1167,9 @@ export default function CompleteSEOApp() {
               <h4 style={{ fontSize: "14px", fontWeight: "600", margin: "0 0 6px 0", color: "#202223" }}>{t.guide.imgTitle}</h4>
               <p style={{ margin: 0, color: "#6d7175", fontSize: "14px", lineHeight: "1.5" }}>{t.guide.imgDesc}</p>
             </div>
-          </s-card>
+          </div>
 
-          <s-card style={{ padding: "24px", backgroundColor: "#f4f6f8", border: "1px solid #dfe3e8" }}>
+          <div style={{ padding: "24px", backgroundColor: "#f4f6f8", border: "1px solid #dfe3e8", borderRadius: "8px" }}>
             <h3 style={{ fontSize: "16px", fontWeight: "600", margin: "0 0 10px 0", color: "#202223" }}>{t.guide.canonicalTitle}</h3>
             <p style={{ margin: "0 0 16px 0", color: "#4d5156", fontSize: "14px", lineHeight: "1.6" }} dangerouslySetInnerHTML={{ __html: t.guide.canonicalDesc }}></p>
             <div style={{ position: "relative", backgroundColor: "#202223", borderRadius: "8px", padding: "16px", overflowX: "auto" }}>
@@ -1165,14 +1177,14 @@ export default function CompleteSEOApp() {
                 {t.guide.canonicalCode}
               </pre>
             </div>
-          </s-card>
+          </div>
 
-          <s-card style={{ padding: "24px", backgroundColor: "#fff9eb", border: "1px solid #fbdc8e" }}>
+          <div style={{ padding: "24px", backgroundColor: "#fff9eb", border: "1px solid #fbdc8e", borderRadius: "8px" }}>
             <h3 style={{ fontSize: "16px", fontWeight: "600", margin: "0 0 10px 0", color: "#202223" }}>{t.guide.uninstallTitle}</h3>
             <p style={{ margin: 0, color: "#4d5156", fontSize: "14px", lineHeight: "1.6" }} dangerouslySetInnerHTML={{ __html: t.guide.uninstallDesc }}></p>
-          </s-card>
+          </div>
 
-          <s-card style={{ padding: "24px", backgroundColor: "#f6f6f7", border: "1px solid #e1e3e5" }}>
+          <div style={{ padding: "24px", backgroundColor: "#f6f6f7", border: "1px solid #e1e3e5", borderRadius: "8px" }}>
             <h3 style={{ fontSize: "16px", fontWeight: "600", margin: "0 0 12px 0", color: "#202223" }}>{t.guide.contactTitle}</h3>
             <p style={{ margin: "0 0 16px 0", color: "#4d5156", fontSize: "14px", lineHeight: "1.6" }}>
               {t.guide.contact1} <a href="https://productexperts.withgoogle.com/directory/84251b18-9ee4-4567-8f66-60de6ab352ab" target="_blank" rel="noopener noreferrer" style={{ color: "#2c6ecb", textDecoration: "none" }}>{t.guide.contactLink}</a>{t.guide.contact2}
@@ -1181,7 +1193,7 @@ export default function CompleteSEOApp() {
               {t.guide.contact3} <br/>
               <a href="https://www.linkedin.com/in/alejandroeguia/" target="_blank" rel="noopener noreferrer" style={{ color: "#2c6ecb", textDecoration: "none", fontWeight: "600" }}>https://www.linkedin.com/in/alejandroeguia/</a>
             </p>
-          </s-card>
+          </div>
 
         </div>
       )}
@@ -1321,7 +1333,7 @@ export default function CompleteSEOApp() {
         </div>
       )}
 
-    </s-page>
+    </Page>
   );
 }
 
