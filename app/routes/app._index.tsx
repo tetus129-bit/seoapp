@@ -685,18 +685,42 @@ export default function CompleteSEOApp() {
     setIsSubmittingNative(true);
 
     try {
-      // Justo antes de enviar, nos aseguramos de que el token esté fresco.
-      // Esto actualiza la caché interna de App Bridge, así que cuando Remix use fetch(), inyectará el token fresco.
+      let token = "";
       if (typeof window !== "undefined" && (window as any).shopify?.idToken) {
-        await (window as any).shopify.idToken();
+        token = await (window as any).shopify.idToken();
+      }
+
+      const formData = new URLSearchParams();
+      Object.entries(body).forEach(([key, value]) => {
+        formData.append(key, value);
+      });
+
+      const url = new URL(window.location.href);
+      url.searchParams.set("_data", "routes/app._index");
+
+      // Implementamos la autenticación 100% manual según la documentación oficial de Shopify:
+      // "Include the ID token in the Authorization header on requests from your frontend to your backend."
+      const response = await fetch(url.toString(), {
+        method: "POST",
+        body: formData,
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Accept": "application/json"
+        }
+      });
+
+      if (!response.ok) {
+        console.error("Error devuelto por Shopify/Remix:", response.status);
+      } else {
+        const data = await response.json();
+        setActionData(data);
+        revalidator.revalidate(); // Refresca los datos en la tabla (como lo haría useFetcher automáticamente)
       }
     } catch (e) {
-      console.warn("Aviso al refrescar token antes del fetch:", e);
+      console.error("Error al ejecutar API call:", e);
+    } finally {
+      setIsSubmittingNative(false);
     }
-    
-    // Dejamos que Remix se encargue de enrutar correctamente y App Bridge inyecte la cabecera.
-    fetcher.submit(body, { method: "POST" });
-    setIsSubmittingNative(false);
   };
 
   const handleOpenEditor = (item: any, type: "product" | "collection" | "page" | "article", parentHandle?: string) => {
