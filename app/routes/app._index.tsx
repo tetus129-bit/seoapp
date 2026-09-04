@@ -94,7 +94,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         return { id: node.id, numericId: String(node.id.split("/").pop()), title: node.title, handle: node.handle, seoTitle, seoDesc, isHidden, score, issues, defaultCanonical, customCanonical };
       });
     }
-  } catch (err: any) { apiErrors.push("Conexión Productos: " + (err.message || String(err))); }
+  } catch (err: any) { apiErrors.push("Conexión Productos: " + (err instanceof Response ? `HTTP ${err.status} - Verifica los scopes (permisos) de tu app.` : err.message || String(err))); }
 
   try {
     const pagesResponse = await admin.graphql(
@@ -122,11 +122,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         return { id: node.id, numericId: String(node.id.split("/").pop()), title: node.title, handle: node.handle, seoTitle, seoDesc, isHidden, score, issues, defaultCanonical, customCanonical };
       });
     }
-  } catch (err: any) { apiErrors.push("Conexión Páginas: " + (err.message || String(err))); }
+  } catch (err: any) { apiErrors.push("Conexión Páginas: " + (err instanceof Response ? `HTTP ${err.status} - Verifica los scopes (permisos) de tu app.` : err.message || String(err))); }
 
   try {
     const blogsResponse = await admin.graphql(
-      ` query getBlogsSEO { blogs(first: 10) { edges { node { id title handle articles(first: 50) { edges { node { id title handle summary author { name } image { url altText } seoTitleTag: metafield(namespace: "global", key: "title_tag") { value } seoDescTag: metafield(namespace: "global", key: "description_tag") { value } metafield(namespace: "seo", key: "hidden") { id value } canonicalUrl: metafield(namespace: "seo", key: "canonical_url") { id value } } } } } } } }`
+      ` query getBlogsSEO { blogs(first: 10) { edges { node { id title handle articles(first: 50) { edges { node { id title handle summary image { url altText } seoTitleTag: metafield(namespace: "global", key: "title_tag") { value } seoDescTag: metafield(namespace: "global", key: "description_tag") { value } metafield(namespace: "seo", key: "hidden") { id value } canonicalUrl: metafield(namespace: "seo", key: "canonical_url") { id value } } } } } } } }`
     );
     const blogsJson = await blogsResponse.json();
     
@@ -152,11 +152,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
           const defaultCanonical = `https://${shop.myshopifyDomain}/blogs/${blogNode.handle}/${artNode.handle}`;
           const customCanonical = artNode.canonicalUrl?.value || "";
 
-          articles.push({ id: artNode.id, numericId: String(artNode.id.split("/").pop()), title: artNode.title, handle: artNode.handle, blogTitle: blogNode.title, blogHandle: blogNode.handle, authorName: artNode.author?.name || "Autor", imageUrl: artNode.image?.url || null, imageAlt: artNode.image?.altText || "", seoTitle, seoDesc, isHidden, score, issues, defaultCanonical, customCanonical });
+          articles.push({ id: artNode.id, numericId: String(artNode.id.split("/").pop()), title: artNode.title, handle: artNode.handle, blogTitle: blogNode.title, blogHandle: blogNode.handle, authorName: "Autor", imageUrl: artNode.image?.url || null, imageAlt: artNode.image?.altText || "", seoTitle, seoDesc, isHidden, score, issues, defaultCanonical, customCanonical });
         });
       });
     }
-  } catch (err: any) { apiErrors.push("Conexión Blog: " + (err.message || String(err))); }
+  } catch (err: any) { apiErrors.push("Conexión Blog: " + (err instanceof Response ? `HTTP ${err.status} - Verifica los scopes (permisos) de tu app.` : err.message || String(err))); }
 
   const allScores = [
     ...products.filter((p) => !p.isHidden).map((p) => p.score),
@@ -322,7 +322,7 @@ const dict = {
     permErrorTitle: "⚠️ Error de Permisos en Shopify",
     permErrorDesc: "Shopify ha bloqueado el acceso a la lectura de ciertos datos (por ejemplo, Páginas o Blogs). Para solucionarlo:",
     permError1: "Abre tu archivo shopify.app.toml",
-    permError2: "Asegúrate de tener estos scopes: write_products, read_online_store_pages, write_online_store_pages, read_content, write_content, write_metaobjects, write_metaobject_definitions, read_themes, write_themes",
+    permError2: "Asegúrate de tener estos scopes: write_products, read_online_store_pages, write_online_store_pages, read_content, write_content",
     permError3: "Detén la terminal del servidor y vuelve a correr npm run dev",
     permErrorDetails: "Ver detalles técnicos del error",
     tabs: { products: "📦 Productos", collections: "📂 Colecciones", pages: "📄 Páginas", blogs: "📝 Blog", images: "🖼️ Imágenes (ALT)", guide: "📚 Guía SEO", tags: "🏷️ Etiquetas" },
@@ -372,7 +372,7 @@ const dict = {
     permErrorTitle: "⚠️ Shopify Permissions Error",
     permErrorDesc: "Shopify has blocked read access to certain data (e.g., Pages or Blogs). To fix this:",
     permError1: "Open your shopify.app.toml file",
-    permError2: "Make sure you have these scopes: write_products, read_online_store_pages, write_online_store_pages, read_content, write_content, write_metaobjects, write_metaobject_definitions, read_themes, write_themes",
+    permError2: "Make sure you have these scopes: write_products, read_online_store_pages, write_online_store_pages, read_content, write_content",
     permError3: "Stop the server terminal and run npm run dev again",
     permErrorDetails: "View technical error details",
     tabs: { products: "📦 Products", collections: "📂 Collections", pages: "📄 Pages", blogs: "📝 Blog", images: "🖼️ Images (ALT)", guide: "📚 SEO Guide", tags: "🏷️ Tags" },
@@ -422,7 +422,7 @@ const dict = {
     permErrorTitle: "⚠️ Erro de Permissões no Shopify",
     permErrorDesc: "O Shopify bloqueou o acesso de leitura a determinados dados (por exemplo, Páginas ou Blogs). Para corrigir isso:",
     permError1: "Abra o seu arquivo shopify.app.toml",
-    permError2: "Certifique-se de ter esses escopos: write_products, read_online_store_pages, write_online_store_pages, read_content, write_content, write_metaobjects, write_metaobject_definitions, read_themes, write_themes",
+    permError2: "Certifique-se de ter esses escopos: write_products, read_online_store_pages, write_online_store_pages, read_content, write_content",
     permError3: "Pare o terminal do servidor e execute npm run dev novamente",
     permErrorDetails: "Ver detalhes técnicos do erro",
     tabs: { products: "📦 Produtos", collections: "📂 Coleções", pages: "📄 Páginas", blogs: "📝 Blog", images: "🖼️ Imagens (ALT)", guide: "📚 Guia SEO", tags: "🏷️ Tags" },
@@ -767,7 +767,7 @@ export default function CompleteSEOApp() {
           <p style={{ margin: "0 0 8px 0", color: "#d82c0d", fontSize: "13px" }}>{t.permErrorDesc}</p>
           <ol style={{ margin: "0 0 12px 0", color: "#d82c0d", fontSize: "13px", paddingLeft: "24px" }}>
             <li>{t.permError1}</li>
-            <li>{t.permError2} <br/><code>scopes = "write_products,read_online_store_pages,write_online_store_pages,read_content,write_content,write_metaobjects,write_metaobject_definitions"</code></li>
+            <li>{t.permError2} <br/><code>scopes = "write_products,read_online_store_pages,write_online_store_pages,read_content,write_content"</code></li>
             <li>{t.permError3}</li>
           </ol>
           <details>
