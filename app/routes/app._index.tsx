@@ -634,7 +634,7 @@ export default function CompleteSEOApp() {
     );
   };
 
-  // FUNCIÓN SÚPER ROBUSTA (REFRESH, HEADER EXPLÍCITO Y AUTO-RELOAD EN FALLO)
+    // FUNCIÓN ROBUSTA (MANTIENE LA SESIÓN ACTIVA Y USA FETCHER)
   useEffect(() => {
     // Keep-alive silencioso: pide un token cada 45 segundos para que nunca expire.
     const interval = setInterval(() => {
@@ -650,38 +650,18 @@ export default function CompleteSEOApp() {
     setIsSubmittingNative(true);
 
     try {
-      let token = "";
+      // Justo antes de enviar, nos aseguramos de que el token esté fresco.
+      // Esto actualiza la caché interna de App Bridge, así que cuando Remix use fetch(), inyectará el token fresco.
       if (typeof window !== "undefined" && (window as any).shopify?.idToken) {
-        token = await (window as any).shopify.idToken();
+        await (window as any).shopify.idToken();
       }
-      
-      const formData = new FormData();
-      Object.entries(body).forEach(([key, value]) => {
-        formData.append(key, value);
-      });
-
-      const url = new URL(window.location.href);
-      url.searchParams.set("_data", "routes/app._index");
-
-      const res = await window.fetch(url.toString(), {
-        method: "POST",
-        body: formData,
-        headers: token ? { "Authorization": `Bearer ${token}` } : {}
-      });
-
-      if (!res.ok) throw new Error("HTTP " + res.status);
-
-      const data = await res.json();
-      setActionData(data);
-      revalidator.revalidate(); 
     } catch (e) {
-      console.warn("Error crítico de red/token en executeApiCall:", e);
-      // Si el token falló al refrescar y Shopify devolvió el rebote HTML 200, res.json() explotará
-      // o el fetch fallará. En cualquier caso, recargamos el iframe para reparar la sesión.
-      window.location.reload();
-    } finally {
-      setIsSubmittingNative(false);
+      console.warn("Aviso al refrescar token antes del fetch:", e);
     }
+    
+    // Dejamos que Remix se encargue de enrutar correctamente y App Bridge inyecte la cabecera.
+    fetcher.submit(body, { method: "POST" });
+    setIsSubmittingNative(false);
   };
 
   const handleOpenEditor = (item: any, type: "product" | "collection" | "page" | "article", parentHandle?: string) => {
