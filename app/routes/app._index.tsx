@@ -181,64 +181,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const intent = formData.get("intent") as string;
 
   try {
-    if (intent === "save_seo_metadata") {
-      const resourceType = formData.get("resourceType") as string;
-      const resourceId = formData.get("resourceId") as string;
-      const seoTitle = (formData.get("seoTitle") as string) || "";
-      const seoDesc = (formData.get("seoDesc") as string) || "";
-      
-      let errors: any[] = [];
-      if (resourceType === "product") {
-        const response = await admin.graphql(
-          `#graphql
-          mutation updateProductSEO($input: ProductInput!) { 
-            productUpdate(input: $input) { 
-              userErrors { field message } 
-            } 
-          }`,
-          { variables: { input: { id: resourceId, seo: { title: seoTitle, description: seoDesc } } } }
-        );
-        const json = await response.json();
-        errors = json.data?.productUpdate?.userErrors || [];
-      } else if (resourceType === "collection") {
-        const response = await admin.graphql(
-          `#graphql
-          mutation updateCollectionSEO($input: CollectionInput!) { 
-            collectionUpdate(input: $input) { 
-              userErrors { field message } 
-            } 
-          }`,
-          { variables: { input: { id: resourceId, seo: { title: seoTitle, description: seoDesc } } } }
-        );
-        const json = await response.json();
-        errors = json.data?.collectionUpdate?.userErrors || [];
-      } else if (resourceType === "page" || resourceType === "article") {
-        const response = await admin.graphql(
-          `#graphql
-          mutation updateContentSEO($metafields: [MetafieldsSetInput!]!) { 
-            metafieldsSet(metafields: $metafields) { 
-              userErrors { field message } 
-            } 
-          }`,
-          { 
-            variables: { 
-              metafields: [
-                { ownerId: resourceId, namespace: "global", key: "title_tag", value: seoTitle, type: "single_line_text_field" },
-                { ownerId: resourceId, namespace: "global", key: "description_tag", value: seoDesc, type: "multi_line_text_field" }
-              ] 
-            } 
-          }
-        );
-        const json = await response.json();
-        errors = json.data?.metafieldsSet?.userErrors || [];
-      }
-      
-      if (errors && errors.length > 0) {
-        return { error: errors[0].message };
-      }
-      return { success: true, message: "Metadatos SEO guardados correctamente en Shopify." };
-    }
-
+    
     if (intent === "toggle_sitemap") {
       const resourceId = formData.get("resourceId") as string;
       const hideAction = formData.get("hideAction") as string;
@@ -382,7 +325,7 @@ const dict = {
     tabs: { products: "📦 Productos", collections: "📂 Colecciones", pages: "📄 Páginas", blogs: "📝 Blog", images: "🖼️ Imágenes (ALT)", guide: "📚 Guía SEO" },
     tables: { product: "Producto", collection: "Colección", page: "Página", article: "Artículo", blog: "Blog", imageProduct: "Imagen y Producto", altText: "Texto Alternativo (ALT)", score: "Puntuación", issues: "Problemas Detectados", indexing: "Indexación", canonical: "URL Canonical", actions: "Acciones" },
     empty: { products: "No hay productos disponibles.", collections: "No hay colecciones disponibles.", pages: "No hay páginas disponibles.", articles: "No hay artículos disponibles.", images: "¡Genial! Todas tus imágenes ya tienen textos alternativos." },
-    misc: { noImg: "Sin img", by: "Por", viewOriginal: "Ver producto original ↗", altPlaceholder: "Ej: Zapatillas deportivas rojas talla 42...", saving: "Guardando...", saveAlt: "💾 Guardar ALT", active: "● Activo", draft: "○ Borrador", archived: "📦 Archivado", optimized: "✓ Optimizado", hidden: "Oculto (noindex)", inSitemap: "En Sitemap", editSeo: "✏️ Editar SEO", include: "Incluir", exclude: "Excluir", lang: "🌐 Idioma:", na: "N/A", customizeCanonical: "Personalizar canonical", defaultCanonical: "Por defecto", customCanonical: "Personalizada" },
+    misc: { noImg: "Sin img", by: "Por", viewOriginal: "Ver producto original ↗", altPlaceholder: "Ej: Zapatillas deportivas rojas talla 42...", saving: "Guardando...", saveAlt: "💾 Guardar ALT", active: "● Activo", draft: "○ Borrador", archived: "📦 Archivado", optimized: "✓ Optimizado", hidden: "Oculto (noindex)", inSitemap: "En Sitemap", editSeo: "✏️ Editar SEO", include: "Incluir", exclude: "Excluir", lang: "🌐 Idioma:", na: "N/A", customizeCanonical: "Personalizar canonical", defaultCanonical: "Por defecto", customCanonical: "Personalizada", fix: "Solucionar" },
     guide: { 
       goldenTitle: "Regla de Oro del SEO", goldenDesc: "Evita títulos genéricos. Utiliza siempre: [Producto] + [Material] + [Beneficio o Marca].", 
       howTo: "📖 Cómo utilizar esta aplicación", 
@@ -430,7 +373,7 @@ const dict = {
     tabs: { products: "📦 Products", collections: "📂 Collections", pages: "📄 Pages", blogs: "📝 Blog", images: "🖼️ Images (ALT)", guide: "📚 SEO Guide" },
     tables: { product: "Product", collection: "Collection", page: "Page", article: "Article", blog: "Blog", imageProduct: "Image and Product", altText: "Alternative Text (ALT)", score: "Score", issues: "Detected Issues", indexing: "Indexing", canonical: "Canonical URL", actions: "Actions" },
     empty: { products: "No products available.", collections: "No collections available.", pages: "No pages available.", articles: "No articles available.", images: "Great! All your images already have alternative texts." },
-    misc: { noImg: "No img", by: "By", viewOriginal: "View original product ↗", altPlaceholder: "E.g: Red sports shoes size 42...", saving: "Saving...", saveAlt: "💾 Save ALT", active: "● Active", draft: "○ Draft", archived: "📦 Archived", optimized: "✓ Optimized", hidden: "Hidden (noindex)", inSitemap: "In Sitemap", editSeo: "✏️ Edit SEO", include: "Include", exclude: "Exclude", lang: "🌐 Language:", na: "N/A", customizeCanonical: "Customize canonical", defaultCanonical: "Default", customCanonical: "Customized" },
+    misc: { noImg: "No img", by: "By", viewOriginal: "View original product ↗", altPlaceholder: "E.g: Red sports shoes size 42...", saving: "Saving...", saveAlt: "💾 Save ALT", active: "● Active", draft: "○ Draft", archived: "📦 Archived", optimized: "✓ Optimized", hidden: "Hidden (noindex)", inSitemap: "In Sitemap", editSeo: "✏️ Edit SEO", include: "Include", exclude: "Exclude", lang: "🌐 Language:", na: "N/A", customizeCanonical: "Customize canonical", defaultCanonical: "Default", customCanonical: "Customized", fix: "Fix" },
     guide: { 
       goldenTitle: "Golden Rule of SEO", goldenDesc: "Avoid generic titles. Always use: [Product] + [Material] + [Benefit or Brand].", 
       howTo: "📖 How to use this application", 
@@ -478,7 +421,7 @@ const dict = {
     tabs: { products: "📦 Produtos", collections: "📂 Coleções", pages: "📄 Páginas", blogs: "📝 Blog", images: "🖼️ Imagens (ALT)", guide: "📚 Guia SEO" },
     tables: { product: "Produto", collection: "Coleção", page: "Página", article: "Artigo", blog: "Blog", imageProduct: "Imagem e Produto", altText: "Texto Alternativo (ALT)", score: "Pontuação", issues: "Problemas Detectados", indexing: "Indexação", canonical: "URL Canônica", actions: "Ações" },
     empty: { products: "Nenhum produto disponível.", collections: "Nenhuma coleção disponível.", pages: "Nenhuma página disponível.", articles: "Nenhum artigo disponível.", images: "Ótimo! Todas as suas imagens já têm textos alternativos." },
-    misc: { noImg: "Sem img", by: "Por", viewOriginal: "Ver produto original ↗", altPlaceholder: "Ex: Tênis esportivo vermelho tamanho 42...", saving: "Salvando...", saveAlt: "💾 Salvar ALT", active: "● Ativo", draft: "○ Rascunho", archived: "📦 Arquivado", optimized: "✓ Otimizado", hidden: "Oculto (noindex)", inSitemap: "No Sitemap", editSeo: "✏️ Editar SEO", include: "Incluir", exclude: "Excluir", lang: "🌐 Idioma:", na: "N/A", customizeCanonical: "Personalizar canonical", defaultCanonical: "Padrão", customCanonical: "Personalizada" },
+    misc: { noImg: "Sem img", by: "Por", viewOriginal: "Ver produto original ↗", altPlaceholder: "Ex: Tênis esportivo vermelho tamanho 42...", saving: "Salvando...", saveAlt: "💾 Salvar ALT", active: "● Ativo", draft: "○ Rascunho", archived: "📦 Arquivado", optimized: "✓ Otimizado", hidden: "Oculto (noindex)", inSitemap: "No Sitemap", editSeo: "✏️ Editar SEO", include: "Incluir", exclude: "Excluir", lang: "🌐 Idioma:", na: "N/A", customizeCanonical: "Personalizar canonical", defaultCanonical: "Padrão", customCanonical: "Personalizada", fix: "Corrigir" },
     guide: { 
       goldenTitle: "Regra de Ouro do SEO", goldenDesc: "Evite títulos genéricos. Use sempre: [Produto] + [Material] + [Benefício ou Marca].", 
       howTo: "📖 Como usar este aplicativo", 
@@ -699,20 +642,12 @@ export default function CompleteSEOApp() {
     setIsSubmittingNative(false);
   };
 
-  const handleOpenEditor = (item: any, type: "product" | "collection" | "page" | "article", parentHandle?: string) => {
-    setEditingItem({ id: item.id, type, title: item.title, handle: item.handle, parentHandle: parentHandle || "", seoTitle: item.seoTitle, seoDesc: item.seoDesc });
-  };
-
+  
   const handleOpenCanonical = (item: any) => {
     setEditingCanonical({ id: item.id, title: item.title, defaultUrl: item.defaultCanonical, customUrl: item.customCanonical });
   };
 
-  const handleSaveMetadata = () => {
-    if (!editingItem) return;
-    executeApiCall({ intent: "save_seo_metadata", resourceType: editingItem.type, resourceId: editingItem.id, seoTitle: editingItem.seoTitle, seoDesc: editingItem.seoDesc });
-    setEditingItem(null);
-  };
-
+  
   const handleSaveCanonical = () => {
     if (!editingCanonical) return;
     executeApiCall({ intent: "save_canonical_url", resourceId: editingCanonical.id, canonicalUrl: editingCanonical.customUrl });
