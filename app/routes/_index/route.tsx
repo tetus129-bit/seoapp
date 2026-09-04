@@ -1,23 +1,12 @@
 import type { LoaderFunctionArgs } from "react-router";
-import { useLoaderData, redirect } from "react-router"; // <-- Importamos redirect
+import { useLoaderData } from "react-router";
 import { login } from "../../shopify.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const url = new URL(request.url);
   const shop = url.searchParams.get("shop");
-  
-  // Verificamos si Shopify está cargando esto dentro de su iframe
-  const isEmbedded = url.searchParams.get("embedded") === "1";
 
   if (shop) {
-    if (isEmbedded) {
-      // 🚀 LA MAGIA: Si estamos dentro del iframe, evitamos el login 
-      // y redirigimos al panel de la app. Allí, authenticate.admin() 
-      // gestionará los tokens de forma segura sin romper el iframe.
-      throw redirect(`/app${url.search}`);
-    }
-    
-    // Si estamos afuera (ej: pantalla completa de instalación), usamos el login normal.
     throw await login(request);
   }
   return { showForm: Boolean(login) };
