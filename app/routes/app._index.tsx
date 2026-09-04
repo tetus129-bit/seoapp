@@ -172,11 +172,25 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 // 2. ACCIONES (ACTION) - Escribir en Shopify
 // ==========================================
 export const action = async ({ request }: ActionFunctionArgs) => {
-  // Shopify/App Bridge se encarga de la autenticación de la petición.
-  // No leemos ni modificamos manualmente el session token.
-  const { admin } = await authenticate.admin(request);
+  // 1. Leemos los datos del formulario PRIMERO
   const formData = await request.formData();
+  const idToken = formData.get("id_token") as string;
   const intent = formData.get("intent") as string;
+
+  // 2. Creamos una petición "falsa" exclusivamente para la validación de Shopify.
+  // Esto es 100% seguro porque copiamos las cabeceras originales pero NO rompemos la petición de Remix.
+  const shopifyAuthRequest = new Request(request.url, {
+    method: request.method,
+    headers: new Headers(request.headers)
+  });
+
+  // 3. Inyectamos tu token fresco de 60 segundos
+  if (idToken) {
+    shopifyAuthRequest.headers.set("Authorization", `Bearer ${idToken}`);
+  }
+
+  // 4. Autenticamos usando nuestra petición falsa preparada
+  const { admin } = await authenticate.admin(shopifyAuthRequest);
 
   try {
     if (intent === "save_seo_metadata") {
@@ -624,9 +638,21 @@ export default function CompleteSEOApp() {
   };
   
   // App Bridge/Shopify gestiona automáticamente el session token.
-  const executeApiCall = (body: Record<string, string>) => {
+  // FUNCIÓN LIMPIA DE ENVÍO CON TOKEN DE SESIÓN FRESCO
+  const executeApiCall = async (body: Record<string, string>) => {
+    try {
+      if (typeof window !== "undefined" && (window as any).shopify?.idToken) {
+        const token = await (window as any).shopify.idToken();
+        if (token) {
+          body.id_token = token; // Recuperamos tu lógica vital
+        }
+      }
+    } catch (e) {
+      console.error("Error al obtener token de sesión:", e);
+    }
+
     fetcher.submit(body, {
-      method: "POST",
+      method: "POST" // Como sugirió ChatGPT, sin el action
     });
   };
 
