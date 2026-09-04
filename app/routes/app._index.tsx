@@ -100,8 +100,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     if (err instanceof Response) {
       const body = await err.text().catch(() => "");
       details = `HTTP ${err.status} - ${body.substring(0, 200)}...`;
+      console.error("Shopify Products API Error (Response):", err.status, body);
+    } else {
+      console.error("Shopify Products API Error:", err);
     }
-    console.error("Shopify Products API Error:", err);
     apiErrors.push(`Conexión Productos: ${details}`);
   }
 
@@ -136,8 +138,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     if (err instanceof Response) {
       const body = await err.text().catch(() => "");
       details = `HTTP ${err.status} - ${body.substring(0, 200)}...`;
+      console.error("Shopify Pages API Error (Response):", err.status, body);
+    } else {
+      console.error("Shopify Pages API Error:", err);
     }
-    console.error("Shopify Pages API Error:", err);
     apiErrors.push(`Conexión Páginas: ${details}`);
   }
 
@@ -178,8 +182,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     if (err instanceof Response) {
       const body = await err.text().catch(() => "");
       details = `HTTP ${err.status} - ${body.substring(0, 200)}...`;
+      console.error("Shopify Blog API Error (Response):", err.status, body);
+    } else {
+      console.error("Shopify Blog API Error:", err);
     }
-    console.error("Shopify Blog API Error:", err);
     apiErrors.push(`Conexión Blog: ${details}`);
   }
 
