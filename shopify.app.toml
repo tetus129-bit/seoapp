@@ -12,23 +12,23 @@ automatically_update_urls_on_dev = true
 api_version = "2026-07"
 
   [[webhooks.subscriptions]]
-  uri = "/webhooks/app/scopes_update"
+  uri = "https://www.seoproshop.com/webhooks/app/scopes_update"
   topics = [ "app/scopes_update" ]
 
   [[webhooks.subscriptions]]
-  uri = "/webhooks/app/uninstalled"
+  uri = "https://www.seoproshop.com/webhooks/app/uninstalled"
   topics = [ "app/uninstalled" ]
 
 [[webhooks.subscriptions]]
   compliance_topics = [ "customers/data_request", "customers/redact", "shop/redact" ]
-  uri = "/webhooks/privacy"
+  uri = "https://www.seoproshop.com/webhooks/privacy"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
 scopes = "write_products, read_online_store_pages, write_online_store_pages, read_content, write_content"
 
 [auth]
-redirect_urls = [ "https://example.com/api/auth" ]
+redirect_urls = [ "https://www.seoproshop.com/api/auth" ]
 
 [product.metafields.app.demo_info]
 type = "single_line_text_field"
