@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
-import { useLoaderData, useFetcher, useRouteError } from "react-router";
+import { useLoaderData, useRevalidator, useRouteError } from "react-router";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
@@ -172,25 +172,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 // 2. ACCIONES (ACTION) - Escribir en Shopify
 // ==========================================
 export const action = async ({ request }: ActionFunctionArgs) => {
-  // 1. Leemos los datos del formulario PRIMERO
+  // Ahora la petición se ha enviado usando un fetch nativo con la cabecera "Authorization"
+  // ya configurada correctamente desde el cliente, por lo que authenticate.admin
+  // la leerá a la perfección sin ningún tipo de truco.
+  const { admin } = await authenticate.admin(request);
+  
   const formData = await request.formData();
-  const idToken = formData.get("id_token") as string;
   const intent = formData.get("intent") as string;
-
-  // 2. Creamos una petición "falsa" exclusivamente para la validación de Shopify.
-  // Esto es 100% seguro porque copiamos las cabeceras originales pero NO rompemos la petición de Remix.
-  const shopifyAuthRequest = new Request(request.url, {
-    method: request.method,
-    headers: new Headers(request.headers)
-  });
-
-  // 3. Inyectamos tu token fresco de 60 segundos
-  if (idToken) {
-    shopifyAuthRequest.headers.set("Authorization", `Bearer ${idToken}`);
-  }
-
-  // 4. Autenticamos usando nuestra petición falsa preparada
-  const { admin } = await authenticate.admin(shopifyAuthRequest);
 
   try {
     if (intent === "save_seo_metadata") {
@@ -534,8 +522,9 @@ export default function CompleteSEOApp() {
   const loaderData = useLoaderData<typeof loader>();
   const { shop, products, collections, pages, articles, totalScore, apiErrors, imagesWithoutAlt } = loaderData;
   
-  const fetcher = useFetcher<any>();
-  const isSubmitting = fetcher.state !== "idle";
+  const revalidator = useRevalidator();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [actionData, setActionData] = useState<any>(null);
 
   const [lang, setLang] = useState<"es" | "en" | "pt">("en");
 
@@ -557,7 +546,6 @@ export default function CompleteSEOApp() {
 
   const t = dict[lang];
 
-  const actionData = fetcher.data;
   const feedback = actionData 
     ? (actionData.error 
         ? { type: "critical" as const, message: t.feedback[actionData.error as keyof typeof t.feedback] || actionData.error } 
@@ -636,24 +624,46 @@ export default function CompleteSEOApp() {
       </div>
     );
   };
-  
-  // App Bridge/Shopify gestiona automáticamente el session token.
-  // FUNCIÓN LIMPIA DE ENVÍO CON TOKEN DE SESIÓN FRESCO
-  const executeApiCall = async (body: Record<string, string>) => {
-    try {
-      if (typeof window !== "undefined" && (window as any).shopify?.idToken) {
-        const token = await (window as any).shopify.idToken();
-        if (token) {
-          body.id_token = token; // Recuperamos tu lógica vital
-        }
-      }
-    } catch (e) {
-      console.error("Error al obtener token de sesión:", e);
-    }
 
-    fetcher.submit(body, {
-      method: "POST" // Como sugirió ChatGPT, sin el action
-    });
+  // FUNCIÓN CON FETCH NATIVO (100% FIABLE PARA EL TOKEN DE 60 SEGUNDOS DE SHOPIFY)
+  const executeApiCall = async (body: Record<string, string>) => {
+    setIsSubmitting(true);
+    setActionData(null);
+
+    try {
+      // 1. Obtenemos el token fresco directamente de App Bridge para evadir el error 200
+      let token = "";
+      if (typeof window !== "undefined" && (window as any).shopify?.idToken) {
+        token = await (window as any).shopify.idToken();
+      }
+
+      // 2. Preparamos los datos
+      const formData = new URLSearchParams();
+      Object.entries(body).forEach(([key, value]) => formData.append(key, value));
+
+      // 3. Hacemos el envío inyectando el token directamente en la Cabecera
+      const response = await fetch("/app?index", {
+        method: "POST",
+        body: formData,
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          ...(token ? { "Authorization": `Bearer ${token}` } : {})
+        },
+      });
+
+      // 4. Actualizamos la interfaz
+      const data = await response.json();
+      setActionData(data);
+      
+      // 5. Refrescamos los datos de la página para ver los cambios
+      revalidator.revalidate();
+
+    } catch (e: any) {
+      console.error("Error al guardar:", e);
+      setActionData({ error: "Error de red al conectar con Shopify." });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleOpenEditor = (item: any, type: "product" | "collection" | "page" | "article", parentHandle?: string) => {
