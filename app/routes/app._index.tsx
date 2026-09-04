@@ -707,7 +707,7 @@ export default function CompleteSEOApp() {
     else if (editingItem.type === "collection") path = `/collections/${editingItem.handle}`;
     else if (editingItem.type === "page") path = `/pages/${editingItem.handle}`;
     else if (editingItem.type === "article") path = `/blogs/${editingItem.parentHandle}/${editingItem.handle}`;
-    return \`https://\${shop.myshopifyDomain}\${path}\`;
+    return `https://${shop.myshopifyDomain}${path}`;
   };
 
   const renderCanonicalCell = (item: any) => {
