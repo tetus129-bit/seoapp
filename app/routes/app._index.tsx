@@ -10,7 +10,7 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin } = await authenticate.admin(request);
   
-  let shop = { name: "Mi Tienda", myshopifyDomain: "" };
+  let shop = { id: "", name: "Mi Tienda", myshopifyDomain: "", tagsHidden: false };
   let products: any[] = [];
   let collections: any[] = [];
   let pages: any[] = [];
@@ -22,7 +22,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     const mainResponse = await admin.graphql(
       `
         query getBasicSEOAuditData {
-          shop { name myshopifyDomain }
+          shop { id name myshopifyDomain tagsHidden: metafield(namespace: "seo", key: "tags_hidden") { value } }
           products(first: 50) {
             edges { node { id title handle status description seo { title description } featuredImage { id url altText } media(first: 10) { nodes { ... on MediaImage { id image { url altText } } } } metafield(namespace: "seo", key: "hidden") { id value } canonicalUrl: metafield(namespace: "seo", key: "canonical_url") { id value } } }
           }
@@ -36,7 +36,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     
     if (mainJson.errors) apiErrors.push("Error en Productos: " + mainJson.errors.map((e: any) => e.message).join(", "));
     
-    if (mainJson.data?.shop) shop = mainJson.data.shop;
+    if (mainJson.data?.shop) { shop = { ...mainJson.data.shop, tagsHidden: mainJson.data.shop.tagsHidden?.value === "1" }; }
     
     if (mainJson.data?.products?.edges) {
       products = mainJson.data.products.edges.map((e: any) => {
@@ -205,6 +205,28 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
       return { success: true, message: hideAction === "hide" ? "Recurso excluido del Sitemap e indexación (noindex)." : "Recurso incluido en el Sitemap." };
     }
+    if (intent === "toggle_tags_indexing") {
+      const shopId = formData.get("shopId") as string;
+      const hideAction = formData.get("hideAction") as string;
+      const value = hideAction === "hide" ? "1" : "0";
+      const response = await admin.graphql(
+        `#graphql
+        mutation setShopTagsHiddenMetafield($metafields: [MetafieldsSetInput!]!) {
+           metafieldsSet(metafields: $metafields) {
+             userErrors { field message }
+           }
+         }`,
+        { variables: { metafields: [{ ownerId: shopId, namespace: "seo", key: "tags_hidden", value: value, type: "number_integer" }] } }
+      );
+      
+      const json = await response.json();
+      const errors = json.data?.metafieldsSet?.userErrors || [];
+      if (errors && errors.length > 0) {
+        return { error: errors[0].message };
+      }
+      return { success: true, message: hideAction === "hide" ? "Páginas de etiquetas excluidas de Google." : "Páginas de etiquetas permitidas." };
+    }
+
 
     if (intent === "save_canonical_url") {
       const resourceId = formData.get("resourceId") as string;
@@ -322,9 +344,10 @@ const dict = {
     permError2: "Asegúrate de tener estos scopes: write_products, read_online_store_pages, write_online_store_pages, read_content, write_content, write_metaobjects, write_metaobject_definitions, read_themes, write_themes",
     permError3: "Detén la terminal del servidor y vuelve a correr npm run dev",
     permErrorDetails: "Ver detalles técnicos del error",
-    tabs: { products: "📦 Productos", collections: "📂 Colecciones", pages: "📄 Páginas", blogs: "📝 Blog", images: "🖼️ Imágenes (ALT)", guide: "📚 Guía SEO" },
+    tabs: { products: "📦 Productos", collections: "📂 Colecciones", pages: "📄 Páginas", blogs: "📝 Blog", images: "🖼️ Imágenes (ALT)", guide: "📚 Guía SEO", tags: "🏷️ Etiquetas" },
     tables: { product: "Producto", collection: "Colección", page: "Página", article: "Artículo", blog: "Blog", imageProduct: "Imagen y Producto", altText: "Texto Alternativo (ALT)", score: "Puntuación", issues: "Problemas Detectados", indexing: "Indexación", canonical: "URL Canonical", actions: "Acciones" },
     empty: { products: "No hay productos disponibles.", collections: "No hay colecciones disponibles.", pages: "No hay páginas disponibles.", articles: "No hay artículos disponibles.", images: "¡Genial! Todas tus imágenes ya tienen textos alternativos." },
+    tagsView: { title: "Control Global de Etiquetas (Tags)", desc: "Shopify genera dinámicamente URLs para cada etiqueta (ej: /collections/zapatos/rojo). Los motores de búsqueda pueden ver esto como contenido duplicado o de baja calidad. Se recomienda desindexar todas las URLs filtradas por etiquetas para mejorar tu SEO.", statusHidden: "Actualmente, las páginas de etiquetas están excluidas de Google (noindex).", statusVisible: "Actualmente, las páginas de etiquetas son visibles para Google.", note: "Nota: Al excluir las etiquetas, la aplicación inyecta automáticamente una regla segura en el archivo theme.liquid de tu tienda activa.", btnExclude: "Excluir todas las etiquetas (noindex)", btnInclude: "Permitir indexación de etiquetas" },
     misc: { noImg: "Sin img", by: "Por", viewOriginal: "Ver producto original ↗", altPlaceholder: "Ej: Zapatillas deportivas rojas talla 42...", saving: "Guardando...", saveAlt: "💾 Guardar ALT", active: "● Activo", draft: "○ Borrador", archived: "📦 Archivado", optimized: "✓ Optimizado", hidden: "Oculto (noindex)", inSitemap: "En Sitemap", editSeo: "✏️ Editar SEO", include: "Incluir", exclude: "Excluir", lang: "🌐 Idioma:", na: "N/A", customizeCanonical: "Personalizar canonical", defaultCanonical: "Por defecto", customCanonical: "Personalizada", fix: "Solucionar" },
     guide: { 
       goldenTitle: "Regla de Oro del SEO", goldenDesc: "Evita títulos genéricos. Utiliza siempre: [Producto] + [Material] + [Beneficio o Marca].", 
@@ -370,9 +393,10 @@ const dict = {
     permError2: "Make sure you have these scopes: write_products, read_online_store_pages, write_online_store_pages, read_content, write_content, write_metaobjects, write_metaobject_definitions, read_themes, write_themes",
     permError3: "Stop the server terminal and run npm run dev again",
     permErrorDetails: "View technical error details",
-    tabs: { products: "📦 Products", collections: "📂 Collections", pages: "📄 Pages", blogs: "📝 Blog", images: "🖼️ Images (ALT)", guide: "📚 SEO Guide" },
+    tabs: { products: "📦 Products", collections: "📂 Collections", pages: "📄 Pages", blogs: "📝 Blog", images: "🖼️ Images (ALT)", guide: "📚 SEO Guide", tags: "🏷️ Tags" },
     tables: { product: "Product", collection: "Collection", page: "Page", article: "Article", blog: "Blog", imageProduct: "Image and Product", altText: "Alternative Text (ALT)", score: "Score", issues: "Detected Issues", indexing: "Indexing", canonical: "Canonical URL", actions: "Actions" },
     empty: { products: "No products available.", collections: "No collections available.", pages: "No pages available.", articles: "No articles available.", images: "Great! All your images already have alternative texts." },
+    tagsView: { title: "Global Tags Control", desc: "Shopify dynamically generates URLs for each tag (e.g., /collections/shoes/red). Search engines may view this as duplicate or low-quality content. We recommend de-indexing all tag-filtered URLs to improve your SEO.", statusHidden: "Currently, tag pages are hidden from Google (noindex).", statusVisible: "Currently, tag pages are visible to Google.", note: "Note: By excluding tags, the app automatically injects a safe rule into your active store's theme.liquid file.", btnExclude: "Exclude all tags (noindex)", btnInclude: "Allow tag indexing" },
     misc: { noImg: "No img", by: "By", viewOriginal: "View original product ↗", altPlaceholder: "E.g: Red sports shoes size 42...", saving: "Saving...", saveAlt: "💾 Save ALT", active: "● Active", draft: "○ Draft", archived: "📦 Archived", optimized: "✓ Optimized", hidden: "Hidden (noindex)", inSitemap: "In Sitemap", editSeo: "✏️ Edit SEO", include: "Include", exclude: "Exclude", lang: "🌐 Language:", na: "N/A", customizeCanonical: "Customize canonical", defaultCanonical: "Default", customCanonical: "Customized", fix: "Fix" },
     guide: { 
       goldenTitle: "Golden Rule of SEO", goldenDesc: "Avoid generic titles. Always use: [Product] + [Material] + [Benefit or Brand].", 
@@ -418,9 +442,10 @@ const dict = {
     permError2: "Certifique-se de ter esses escopos: write_products, read_online_store_pages, write_online_store_pages, read_content, write_content, write_metaobjects, write_metaobject_definitions, read_themes, write_themes",
     permError3: "Pare o terminal do servidor e execute npm run dev novamente",
     permErrorDetails: "Ver detalhes técnicos do erro",
-    tabs: { products: "📦 Produtos", collections: "📂 Coleções", pages: "📄 Páginas", blogs: "📝 Blog", images: "🖼️ Imagens (ALT)", guide: "📚 Guia SEO" },
+    tabs: { products: "📦 Produtos", collections: "📂 Coleções", pages: "📄 Páginas", blogs: "📝 Blog", images: "🖼️ Imagens (ALT)", guide: "📚 Guia SEO", tags: "🏷️ Tags" },
     tables: { product: "Produto", collection: "Coleção", page: "Página", article: "Artigo", blog: "Blog", imageProduct: "Imagem e Produto", altText: "Texto Alternativo (ALT)", score: "Pontuação", issues: "Problemas Detectados", indexing: "Indexação", canonical: "URL Canônica", actions: "Ações" },
     empty: { products: "Nenhum produto disponível.", collections: "Nenhuma coleção disponível.", pages: "Nenhuma página disponível.", articles: "Nenhum artigo disponível.", images: "Ótimo! Todas as suas imagens já têm textos alternativos." },
+    tagsView: { title: "Controle Global de Tags", desc: "A Shopify gera URLs dinamicamente para cada tag (ex: /collections/sapatos/vermelho). Os motores de busca podem ver isso como conteúdo duplicado ou de baixa qualidade. Recomendamos desindexar todas as URLs filtradas por tags para melhorar seu SEO.", statusHidden: "Atualmente, as páginas de tags estão ocultas do Google (noindex).", statusVisible: "Atualmente, as páginas de tags são visíveis para o Google.", note: "Nota: Ao excluir as tags, o aplicativo injeta automaticamente uma regra segura no arquivo theme.liquid da sua loja ativa.", btnExclude: "Excluir todas as tags (noindex)", btnInclude: "Permitir indexação de tags" },
     misc: { noImg: "Sem img", by: "Por", viewOriginal: "Ver produto original ↗", altPlaceholder: "Ex: Tênis esportivo vermelho tamanho 42...", saving: "Salvando...", saveAlt: "💾 Salvar ALT", active: "● Ativo", draft: "○ Rascunho", archived: "📦 Arquivado", optimized: "✓ Otimizado", hidden: "Oculto (noindex)", inSitemap: "No Sitemap", editSeo: "✏️ Editar SEO", include: "Incluir", exclude: "Excluir", lang: "🌐 Idioma:", na: "N/A", customizeCanonical: "Personalizar canonical", defaultCanonical: "Padrão", customCanonical: "Personalizada", fix: "Corrigir" },
     guide: { 
       goldenTitle: "Regra de Ouro do SEO", goldenDesc: "Evite títulos genéricos. Use sempre: [Produto] + [Material] + [Benefício ou Marca].", 
@@ -504,7 +529,7 @@ export default function CompleteSEOApp() {
         : { type: "success" as const, message: t.feedback[actionData.message as keyof typeof t.feedback] || actionData.message }) 
     : null;
 
-  const [activeTab, setActiveTabState] = useState<"products" | "collections" | "pages" | "blogs" | "images" | "guide">("products");
+  const [activeTab, setActiveTabState] = useState<"products" | "collections" | "pages" | "blogs" | "images" | "guide" | "tags">("products");
 
   useEffect(() => {
     try {
@@ -839,13 +864,7 @@ export default function CompleteSEOApp() {
                     {renderCanonicalCell(prod)}
                     <td style={{ padding: "12px 16px", textAlign: "right" }}>
                       <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end", alignItems: "center" }}>
-                        <button 
-                          type="button" 
-                          onClick={() => handleOpenEditor(prod, "product")} 
-                          style={{ padding: "6px 12px", borderRadius: "6px", border: "1px solid #c9cccf", backgroundColor: "#ffffff", color: "#202223", fontWeight: "600", cursor: "pointer", fontSize: "13px", fontFamily: "inherit" }}
-                        >
-                          {t.misc.editSeo}
-                        </button>
+                        
                         <button 
                           type="button" 
                           disabled={isSubmitting} 
@@ -894,13 +913,7 @@ export default function CompleteSEOApp() {
                     {renderCanonicalCell(col)}
                     <td style={{ padding: "12px 16px", textAlign: "right" }}>
                       <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end", alignItems: "center" }}>
-                        <button 
-                          type="button" 
-                          onClick={() => handleOpenEditor(col, "collection")} 
-                          style={{ padding: "6px 12px", borderRadius: "6px", border: "1px solid #c9cccf", backgroundColor: "#ffffff", color: "#202223", fontWeight: "600", cursor: "pointer", fontSize: "13px", fontFamily: "inherit" }}
-                        >
-                          {t.misc.editSeo}
-                        </button>
+                        
                         <button 
                           type="button" 
                           disabled={isSubmitting} 
@@ -949,13 +962,7 @@ export default function CompleteSEOApp() {
                     {renderCanonicalCell(pg)}
                     <td style={{ padding: "12px 16px", textAlign: "right" }}>
                       <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end", alignItems: "center" }}>
-                        <button 
-                          type="button" 
-                          onClick={() => handleOpenEditor(pg, "page")} 
-                          style={{ padding: "6px 12px", borderRadius: "6px", border: "1px solid #c9cccf", backgroundColor: "#ffffff", color: "#202223", fontWeight: "600", cursor: "pointer", fontSize: "13px", fontFamily: "inherit" }}
-                        >
-                          {t.misc.editSeo}
-                        </button>
+                        
                         <button 
                           type="button" 
                           disabled={isSubmitting} 
@@ -1007,13 +1014,7 @@ export default function CompleteSEOApp() {
                     {renderCanonicalCell(art)}
                     <td style={{ padding: "12px 16px", textAlign: "right" }}>
                       <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end", alignItems: "center" }}>
-                        <button 
-                          type="button" 
-                          onClick={() => handleOpenEditor(art, "article", art.blogHandle)} 
-                          style={{ padding: "6px 12px", borderRadius: "6px", border: "1px solid #c9cccf", backgroundColor: "#ffffff", color: "#202223", fontWeight: "600", cursor: "pointer", fontSize: "13px", fontFamily: "inherit" }}
-                        >
-                          {t.misc.editSeo}
-                        </button>
+                        
                         <button 
                           type="button" 
                           disabled={isSubmitting} 
@@ -1101,6 +1102,58 @@ export default function CompleteSEOApp() {
       )}
 
       {/* GUÍA SEO MULTILINGÜE */}
+      
+      {activeTab === "tags" && (
+        <div style={{ backgroundColor: "#ffffff", borderRadius: "12px", border: "1px solid #e1e3e5", padding: "32px", maxWidth: "800px", margin: "0 auto", boxShadow: "0 2px 4px rgba(0,0,0,0.02)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "16px", marginBottom: "24px" }}>
+            <div style={{ fontSize: "32px" }}>🏷️</div>
+            <div>
+              <h2 style={{ margin: 0, fontSize: "20px", fontWeight: "600", color: "#202223" }}>{t.tagsView.title}</h2>
+            </div>
+          </div>
+          
+          <div style={{ backgroundColor: "#f4f6f8", padding: "20px", borderRadius: "8px", border: "1px solid #e1e3e5", marginBottom: "24px", color: "#4d5156", fontSize: "14px", lineHeight: "1.6" }}>
+            {t.tagsView.desc}
+          </div>
+
+          <div style={{ backgroundColor: shop.tagsHidden ? "#e3f1df" : "#fef3d6", padding: "16px", borderRadius: "8px", border: "1px solid " + (shop.tagsHidden ? "#aee9d1" : "#ffe8a1"), marginBottom: "24px", display: "flex", alignItems: "center", gap: "12px" }}>
+            <div style={{ fontSize: "24px" }}>{shop.tagsHidden ? "🛡️" : "⚠️"}</div>
+            <div style={{ fontSize: "14px", fontWeight: "500", color: shop.tagsHidden ? "#108043" : "#8a6100" }}>
+              {shop.tagsHidden ? t.tagsView.statusHidden : t.tagsView.statusVisible}
+            </div>
+          </div>
+
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", borderTop: "1px solid #e1e3e5", paddingTop: "24px" }}>
+            <button
+              type="button"
+              disabled={isSubmitting}
+              onClick={() => {
+                executeApiCall({ intent: "toggle_tags_indexing", shopId: shop.id, hideAction: shop.tagsHidden ? "show" : "hide" });
+              }}
+              style={{
+                padding: "10px 20px",
+                borderRadius: "6px",
+                border: shop.tagsHidden ? "1px solid #c9cccf" : "none",
+                backgroundColor: shop.tagsHidden ? "#ffffff" : "#d82c0d",
+                color: shop.tagsHidden ? "#202223" : "#ffffff",
+                fontWeight: "600",
+                cursor: isSubmitting ? "not-allowed" : "pointer",
+                fontSize: "14px",
+                fontFamily: "inherit",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px"
+              }}
+            >
+              {shop.tagsHidden ? t.tagsView.btnInclude : t.tagsView.btnExclude}
+            </button>
+          </div>
+          
+          <div style={{ marginTop: "16px", fontSize: "12px", color: "#8c9196", textAlign: "right" }}>
+            {t.tagsView.note}
+          </div>
+        </div>
+      )}
       {activeTab === "guide" && (
         <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
           
