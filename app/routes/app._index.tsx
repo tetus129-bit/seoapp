@@ -10,7 +10,7 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin } = await authenticate.admin(request);
   
-  let shop = { id: "", name: "Mi Tienda", myshopifyDomain: "", tagsHidden: false };
+  let shop = { id: "", name: "Mi Tienda", myshopifyDomain: "", tagsHidden: false, appId: "" };
   let products: any[] = [];
   let collections: any[] = [];
   let pages: any[] = [];
@@ -22,7 +22,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     const mainResponse = await admin.graphql(
       `
         query getBasicSEOAuditData {
-          shop { id name myshopifyDomain tagsHidden: metafield(namespace: "seo", key: "tags_hidden") { value } }
+          shop { id name myshopifyDomain }
+          currentAppInstallation { id tagsHidden: metafield(namespace: "seo", key: "tags_hidden") { value } }
           products(first: 50) {
             edges { node { id title handle status description seo { title description } featuredImage { id url altText } media(first: 10) { nodes { ... on MediaImage { id image { url altText } } } } metafield(namespace: "seo", key: "hidden") { id value } canonicalUrl: metafield(namespace: "seo", key: "canonical_url") { id value } } }
           }
@@ -36,7 +37,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     
     if (mainJson.errors) apiErrors.push("Error en Productos: " + mainJson.errors.map((e: any) => e.message).join(", "));
     
-    if (mainJson.data?.shop) { shop = { ...mainJson.data.shop, tagsHidden: mainJson.data.shop.tagsHidden?.value === "1" }; }
+    if (mainJson.data?.shop) { shop = { ...mainJson.data.shop, tagsHidden: mainJson.data.currentAppInstallation?.tagsHidden?.value === "1", appId: mainJson.data.currentAppInstallation?.id }; }
     
     if (mainJson.data?.products?.edges) {
       products = mainJson.data.products.edges.map((e: any) => {
@@ -206,24 +207,79 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       return { success: true, message: hideAction === "hide" ? "Recurso excluido del Sitemap e indexación (noindex)." : "Recurso incluido en el Sitemap." };
     }
     if (intent === "toggle_tags_indexing") {
-      const shopId = formData.get("shopId") as string;
+      const appId = formData.get("appId") as string;
       const hideAction = formData.get("hideAction") as string;
       const value = hideAction === "hide" ? "1" : "0";
-      const response = await admin.graphql(
-        `#graphql
-        mutation setShopTagsHiddenMetafield($metafields: [MetafieldsSetInput!]!) {
-           metafieldsSet(metafields: $metafields) {
-             userErrors { field message }
-           }
-         }`,
-        { variables: { metafields: [{ ownerId: shopId, namespace: "seo", key: "tags_hidden", value: value, type: "number_integer" }] } }
-      );
       
-      const json = await response.json();
-      const errors = json.data?.metafieldsSet?.userErrors || [];
-      if (errors && errors.length > 0) {
-        return { error: errors[0].message };
+      const { session } = await authenticate.admin(request);
+      
+      try {
+        // 1. Save Metafield to AppInstallation
+        const response = await admin.graphql(
+          `#graphql
+          mutation setShopTagsHiddenMetafield($metafields: [MetafieldsSetInput!]!) {
+             metafieldsSet(metafields: $metafields) {
+               userErrors { field message }
+             }
+           }`,
+          { variables: { metafields: [{ ownerId: appId, namespace: "seo", key: "tags_hidden", value: value, type: "number_integer" }] } }
+        );
+        const json = await response.json();
+        const errors = json.data?.metafieldsSet?.userErrors || [];
+        if (errors && errors.length > 0) {
+          return { error: errors[0].message };
+        }
+
+        // 2. Modify theme.liquid via REST
+        const themesRes = await fetch(`https://${session.shop}/admin/api/2024-01/themes.json`, {
+          headers: { "X-Shopify-Access-Token": session.accessToken }
+        });
+        const themesData = await themesRes.json();
+        const mainTheme = themesData.themes?.find((t: any) => t.role === "main");
+        
+        if (mainTheme) {
+          const assetRes = await fetch(`https://${session.shop}/admin/api/2024-01/themes/${mainTheme.id}/assets.json?asset[key]=layout/theme.liquid`, {
+            headers: { "X-Shopify-Access-Token": session.accessToken }
+          });
+          const assetData = await assetRes.json();
+          let themeLiquid = assetData.asset?.value || "";
+
+          const snippet = "\n{% comment %}SEO_PRO_TAGS_HIDDEN{% endcomment %}\n{% if request.page_type == 'collection' and current_tags %}\n<meta name=\"robots\" content=\"noindex, nofollow\">\n{% endif %}\n{% comment %}END_SEO_PRO_TAGS_HIDDEN{% endcomment %}\n";
+          
+          let modified = false;
+          if (hideAction === "hide") {
+            if (!themeLiquid.includes("SEO_PRO_TAGS_HIDDEN")) {
+              themeLiquid = themeLiquid.replace("</head>", snippet + "</head>");
+              modified = true;
+            }
+          } else {
+            if (themeLiquid.includes("SEO_PRO_TAGS_HIDDEN")) {
+              const regex = /\n?\{% comment %\}SEO_PRO_TAGS_HIDDEN\{% endcomment %\}.*?\{% comment %\}END_SEO_PRO_TAGS_HIDDEN\{% endcomment %\}\n?/gs;
+              themeLiquid = themeLiquid.replace(regex, "");
+              modified = true;
+            }
+          }
+
+          if (modified) {
+            await fetch(`https://${session.shop}/admin/api/2024-01/themes/${mainTheme.id}/assets.json`, {
+              method: "PUT",
+              headers: { 
+                "X-Shopify-Access-Token": session.accessToken,
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({
+                asset: {
+                  key: "layout/theme.liquid",
+                  value: themeLiquid
+                }
+              })
+            });
+          }
+        }
+      } catch (err: any) {
+        return { error: err.message || "Error al modificar theme.liquid" };
       }
+      
       return { success: true, message: hideAction === "hide" ? "Páginas de etiquetas excluidas de Google." : "Páginas de etiquetas permitidas." };
     }
 
@@ -354,7 +410,7 @@ const dict = {
       goldenTitle: "Regla de Oro del SEO", goldenDesc: "Evita títulos genéricos. Utiliza siempre: [Producto] + [Material] + [Beneficio o Marca].", 
       howTo: "📖 Cómo utilizar esta aplicación", 
       scoreTitle: "🎯 Puntuación SEO (0 a 100)", scoreDesc: "La aplicación analiza automáticamente tus títulos y descripciones SEO. Penaliza títulos que sean muy cortos (<30 caracteres) o demasiado largos (>60 caracteres), así como las descripciones muy breves (<70) o muy largas (>160). Además, reduce la puntuación si detecta imágenes que carecen de un texto alternativo (ALT).", 
-      editTitle: "✏️ Edición Rápida con Vista Previa", editDesc: "Al presionar el botón \"Editar SEO\", se abrirá un panel donde puedes modificar el Título y la Meta Descripción de cualquier producto, colección, página o artículo de blog. Mientras escribes, verás una simulación en tiempo real de cómo aparecería tu resultado en las búsquedas de Google, tanto en la versión móvil como en la versión de escritorio.", 
+      editTitle: "🏷️ Control de Etiquetas (Tags)", editDesc: "Las etiquetas generan URLs dinámicas que pueden causar problemas de contenido duplicado en buscadores. Utiliza la pestaña de Etiquetas para desindexar globalmente todas estas páginas de Google con un solo clic y proteger la autoridad y limpieza de tu tienda.", 
       indexTitle: "👁️ Control de Indexación (Ocultar del Sitemap)", indexDesc: "Si tienes productos o páginas que no quieres que aparezcan en Google (por ejemplo, páginas de agradecimiento o productos exclusivos), puedes utilizar el botón \"Excluir\". Esto agrega una regla (metafield seo.hidden) que le indica a Shopify que elimine ese recurso de tu archivo sitemap.xml y agregue la etiqueta noindex para que los buscadores lo ignoren.", 
       imgTitle: "🖼️ Optimización de Imágenes (ALT)", imgDesc: "En la pestaña \"Imágenes (ALT)\", la app filtra y te muestra únicamente las fotografías de tus productos que actualmente no tienen ningún texto alternativo. Podrás ver una pequeña miniatura de la imagen y escribir rápidamente su descripción. Al guardarlo, la imagen desaparecerá de la lista, ayudándote a mejorar tu posicionamiento en Google Imágenes.", 
       canonicalTitle: "🔗 ¿Cómo activar las URLs Canonical personalizadas?", canonicalDesc: "Shopify no actualiza automáticamente la etiqueta canonical en el código fuente de tu tienda solo por usar la App. Para que funcione y Google lo detecte, debes ir a <b>Tienda Online > Temas > Editar código</b>, abrir el archivo <code>theme.liquid</code> y reemplazar la etiqueta original <code>&lt;link rel=\"canonical\" href=\"{{ canonical_url }}\"&gt;</code> por el siguiente código seguro:",
@@ -1133,7 +1189,7 @@ export default function CompleteSEOApp() {
               type="button"
               disabled={isSubmitting}
               onClick={() => {
-                executeApiCall({ intent: "toggle_tags_indexing", shopId: shop.id, hideAction: shop.tagsHidden ? "show" : "hide" });
+                executeApiCall({ intent: "toggle_tags_indexing", appId: shop.appId, hideAction: shop.tagsHidden ? "show" : "hide" });
               }}
               style={{
                 padding: "10px 20px",
