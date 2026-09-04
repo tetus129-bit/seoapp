@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
-import { useLoaderData, useRevalidator, useRouteError } from "react-router";
+import { useLoaderData, useFetcher, useRevalidator, useRouteError } from "react-router";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
@@ -522,9 +522,16 @@ export default function CompleteSEOApp() {
   const loaderData = useLoaderData<typeof loader>();
   const { shop, products, collections, pages, articles, totalScore, apiErrors, imagesWithoutAlt } = loaderData;
   
-  const revalidator = useRevalidator();
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const fetcher = useFetcher<typeof action>();
   const [actionData, setActionData] = useState<any>(null);
+
+  useEffect(() => {
+    if (fetcher.state === "idle" && fetcher.data) {
+      setActionData(fetcher.data);
+    }
+  }, [fetcher.data, fetcher.state]);
+
+  const isSubmitting = fetcher.state === "submitting" || fetcher.state === "loading";
 
   const [lang, setLang] = useState<"es" | "en" | "pt">("en");
 
@@ -625,45 +632,19 @@ export default function CompleteSEOApp() {
     );
   };
 
-  // FUNCIÓN CON FETCH NATIVO (100% FIABLE PARA EL TOKEN DE 60 SEGUNDOS DE SHOPIFY)
+  // FUNCIÓN ROBUSTA (USEFETCHER + TOKEN REFRESH)
   const executeApiCall = async (body: Record<string, string>) => {
-    setIsSubmitting(true);
     setActionData(null);
 
     try {
-      // 1. Obtenemos el token fresco directamente de App Bridge para evadir el error 200
-      let token = "";
       if (typeof window !== "undefined" && (window as any).shopify?.idToken) {
-        token = await (window as any).shopify.idToken();
+        await (window as any).shopify.idToken();
       }
-
-      // 2. Preparamos los datos
-      const formData = new URLSearchParams();
-      Object.entries(body).forEach(([key, value]) => formData.append(key, value));
-
-      // 3. Hacemos el envío inyectando el token directamente en la Cabecera
-      const response = await fetch("/app?index", {
-        method: "POST",
-        body: formData,
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          ...(token ? { "Authorization": `Bearer ${token}` } : {})
-        },
-      });
-
-      // 4. Actualizamos la interfaz
-      const data = await response.json();
-      setActionData(data);
-      
-      // 5. Refrescamos los datos de la página para ver los cambios
-      revalidator.revalidate();
-
-    } catch (e: any) {
-      console.error("Error al guardar:", e);
-      setActionData({ error: "Error de red al conectar con Shopify." });
-    } finally {
-      setIsSubmitting(false);
+    } catch (e) {
+      console.warn("No se pudo refrescar el token de Shopify:", e);
     }
+    
+    fetcher.submit(body, { method: "POST" });
   };
 
   const handleOpenEditor = (item: any, type: "product" | "collection" | "page" | "article", parentHandle?: string) => {
@@ -726,7 +707,7 @@ export default function CompleteSEOApp() {
     else if (editingItem.type === "collection") path = `/collections/${editingItem.handle}`;
     else if (editingItem.type === "page") path = `/pages/${editingItem.handle}`;
     else if (editingItem.type === "article") path = `/blogs/${editingItem.parentHandle}/${editingItem.handle}`;
-    return `https://${shop.myshopifyDomain}${path}`;
+    return \`https://\${shop.myshopifyDomain}\${path}\`;
   };
 
   const renderCanonicalCell = (item: any) => {
@@ -777,7 +758,7 @@ export default function CompleteSEOApp() {
           </div>
           <p style={{ margin: 0, color: "#6d7175" }}>{t.summary}</p>
         </s-card>
-        <s-card style={{ flex: "1", padding: "20px", textAlign: "center", backgroundColor: getScoreColor(totalScore) + "10", border: `1px solid ${getScoreColor(totalScore)}40` }}>
+        <s-card style={{ flex: "1", padding: "20px", textAlign: "center", backgroundColor: getScoreColor(totalScore) + "10", border: \`1px solid \${getScoreColor(totalScore)}40\` }}>
           <h2 style={{ fontSize: "14px", fontWeight: "600", margin: "0 0 10px 0", color: "#303030" }}>{t.globalHealth}</h2>
           <div style={{ fontSize: "42px", fontWeight: "700", color: getScoreColor(totalScore), lineHeight: "1" }}>{totalScore}<span style={{ fontSize: "20px" }}>/100</span></div>
         </s-card>
@@ -802,7 +783,7 @@ export default function CompleteSEOApp() {
       )}
 
       {feedback && (
-        <div style={{ padding: "12px 16px", backgroundColor: feedback.type === "success" ? "#e3f1df" : "#ffe4e5", borderLeft: `4px solid ${feedback.type === "success" ? "#108043" : "#d82c0d"}`, borderRadius: "4px", marginBottom: "20px" }}>
+        <div style={{ padding: "12px 16px", backgroundColor: feedback.type === "success" ? "#e3f1df" : "#ffe4e5", borderLeft: \`4px solid \${feedback.type === "success" ? "#108043" : "#d82c0d"}\`, borderRadius: "4px", marginBottom: "20px" }}>
           <span style={{ color: feedback.type === "success" ? "#108043" : "#d82c0d", fontWeight: "600", fontSize: "14px" }}>{feedback.message}</span>
         </div>
       )}
@@ -811,11 +792,11 @@ export default function CompleteSEOApp() {
       <div style={{ display: "flex", gap: "10px", marginBottom: "20px", borderBottom: "1px solid #e1e3e5", paddingBottom: "10px", overflowX: "auto" }}>
         {["products", "collections", "pages", "blogs", "images", "guide"].map((tab) => {
           const labels: Record<string, string> = { 
-            products: `${t.tabs.products} (${products.length})`, 
-            collections: `${t.tabs.collections} (${collections.length})`, 
-            pages: `${t.tabs.pages} (${pages.length})`, 
-            blogs: `${t.tabs.blogs} (${articles.length})`, 
-            images: `${t.tabs.images} (${imagesWithoutAlt.length})`,
+            products: \`\${t.tabs.products} (\${products.length})\`, 
+            collections: \`\${t.tabs.collections} (\${collections.length})\`, 
+            pages: \`\${t.tabs.pages} (\${pages.length})\`, 
+            blogs: \`\${t.tabs.blogs} (\${articles.length})\`, 
+            images: \`\${t.tabs.images} (\${imagesWithoutAlt.length})\`,
             guide: t.tabs.guide 
           };
           return (
@@ -853,7 +834,7 @@ export default function CompleteSEOApp() {
                         </div>
                         <div>
                           <div style={{ fontWeight: "600", fontSize: "14px", marginBottom: "4px" }}>{prod.title}</div>
-                          <div style={{ fontSize: "12px", marginBottom: "2px" }}><a href={`https://${shop.myshopifyDomain}/products/${prod.handle}`} target="_blank" rel="noopener noreferrer" style={{ color: "#2c6ecb", textDecoration: "none" }}>/products/{prod.handle}</a></div>
+                          <div style={{ fontSize: "12px", marginBottom: "2px" }}><a href={\`https://\${shop.myshopifyDomain}/products/\${prod.handle}\`} target="_blank" rel="noopener noreferrer" style={{ color: "#2c6ecb", textDecoration: "none" }}>/products/{prod.handle}</a></div>
                           <div style={{ fontSize: "11px", color: "#8c9196", marginBottom: "6px" }}>ID: {prod.numericId}</div>
                           {renderProductStatus(prod.status)}
                         </div>
@@ -917,7 +898,7 @@ export default function CompleteSEOApp() {
                   <tr key={col.id} style={{ borderBottom: "1px solid #f1f2f4" }}>
                     <td style={{ padding: "12px 16px" }}>
                       <div style={{ fontWeight: "600", fontSize: "14px", marginBottom: "4px" }}>{col.title}</div>
-                      <div style={{ fontSize: "12px", marginBottom: "2px" }}><a href={`https://${shop.myshopifyDomain}/collections/${col.handle}`} target="_blank" rel="noopener noreferrer" style={{ color: "#2c6ecb", textDecoration: "none" }}>/collections/{col.handle}</a></div>
+                      <div style={{ fontSize: "12px", marginBottom: "2px" }}><a href={\`https://\${shop.myshopifyDomain}/collections/\${col.handle}\`} target="_blank" rel="noopener noreferrer" style={{ color: "#2c6ecb", textDecoration: "none" }}>/collections/{col.handle}</a></div>
                       <div style={{ fontSize: "11px", color: "#8c9196" }}>ID: {col.numericId}</div>
                     </td>
                     <td style={{ padding: "12px 16px" }}>{renderScore(col.score, col.isHidden)}</td>
@@ -972,7 +953,7 @@ export default function CompleteSEOApp() {
                   <tr key={pg.id} style={{ borderBottom: "1px solid #f1f2f4" }}>
                     <td style={{ padding: "12px 16px" }}>
                       <div style={{ fontWeight: "600", fontSize: "14px", marginBottom: "4px" }}>{pg.title}</div>
-                      <div style={{ fontSize: "12px", marginBottom: "2px" }}><a href={`https://${shop.myshopifyDomain}/pages/${pg.handle}`} target="_blank" rel="noopener noreferrer" style={{ color: "#2c6ecb", textDecoration: "none" }}>/pages/{pg.handle}</a></div>
+                      <div style={{ fontSize: "12px", marginBottom: "2px" }}><a href={\`https://\${shop.myshopifyDomain}/pages/\${pg.handle}\`} target="_blank" rel="noopener noreferrer" style={{ color: "#2c6ecb", textDecoration: "none" }}>/pages/{pg.handle}</a></div>
                       <div style={{ fontSize: "11px", color: "#8c9196" }}>ID: {pg.numericId}</div>
                     </td>
                     <td style={{ padding: "12px 16px" }}>{renderScore(pg.score, pg.isHidden)}</td>
@@ -1029,7 +1010,7 @@ export default function CompleteSEOApp() {
                     <td style={{ padding: "12px 16px" }}>
                       <div style={{ fontWeight: "600", fontSize: "14px", marginBottom: "4px" }}>{art.title}</div>
                       <div style={{ fontSize: "12px", color: "#6d7175", marginBottom: "2px" }}>{t.misc.by} {art.authorName}</div>
-                      <div style={{ fontSize: "12px", marginBottom: "2px" }}><a href={`https://${shop.myshopifyDomain}/blogs/${art.blogHandle}/${art.handle}`} target="_blank" rel="noopener noreferrer" style={{ color: "#2c6ecb", textDecoration: "none" }}>/blogs/{art.blogHandle}/{art.handle}</a></div>
+                      <div style={{ fontSize: "12px", marginBottom: "2px" }}><a href={\`https://\${shop.myshopifyDomain}/blogs/\${art.blogHandle}/\${art.handle}\`} target="_blank" rel="noopener noreferrer" style={{ color: "#2c6ecb", textDecoration: "none" }}>/blogs/{art.blogHandle}/{art.handle}</a></div>
                       <div style={{ fontSize: "11px", color: "#8c9196" }}>ID: {art.numericId}</div>
                     </td>
                     <td style={{ padding: "12px 16px" }}><span style={{ padding: "3px 8px", backgroundColor: "#f1f2f4", borderRadius: "10px", fontSize: "12px", fontWeight: "600" }}>{art.blogTitle}</span></td>
@@ -1089,7 +1070,7 @@ export default function CompleteSEOApp() {
                         <div>
                           <div style={{ fontWeight: "600", fontSize: "14px", marginBottom: "4px" }}>{img.productTitle}</div>
                           <div style={{ fontSize: "12px" }}>
-                            <a href={`https://${shop.myshopifyDomain}/products/${img.productHandle}`} target="_blank" rel="noopener noreferrer" style={{ color: "#2c6ecb", textDecoration: "none" }}>{t.misc.viewOriginal}</a>
+                            <a href={\`https://\${shop.myshopifyDomain}/products/\${img.productHandle}\`} target="_blank" rel="noopener noreferrer" style={{ color: "#2c6ecb", textDecoration: "none" }}>{t.misc.viewOriginal}</a>
                           </div>
                         </div>
                       </div>
