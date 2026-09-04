@@ -783,7 +783,7 @@ export default function CompleteSEOApp() {
       )}
 
       {feedback && (
-        <div style={{ padding: "12px 16px", backgroundColor: feedback.type === "success" ? "#e3f1df" : "#ffe4e5", borderLeft: \`4px solid \${feedback.type === "success" ? "#108043" : "#d82c0d"}\`, borderRadius: "4px", marginBottom: "20px" }}>
+        <div style={{ padding: "12px 16px", backgroundColor: feedback.type === "success" ? "#e3f1df" : "#ffe4e5", borderLeft: `4px solid ${feedback.type === "success" ? "#108043" : "#d82c0d"}`, borderRadius: "4px", marginBottom: "20px" }}>
           <span style={{ color: feedback.type === "success" ? "#108043" : "#d82c0d", fontWeight: "600", fontSize: "14px" }}>{feedback.message}</span>
         </div>
       )}
@@ -792,11 +792,11 @@ export default function CompleteSEOApp() {
       <div style={{ display: "flex", gap: "10px", marginBottom: "20px", borderBottom: "1px solid #e1e3e5", paddingBottom: "10px", overflowX: "auto" }}>
         {["products", "collections", "pages", "blogs", "images", "guide"].map((tab) => {
           const labels: Record<string, string> = { 
-            products: \`\${t.tabs.products} (\${products.length})\`, 
-            collections: \`\${t.tabs.collections} (\${collections.length})\`, 
-            pages: \`\${t.tabs.pages} (\${pages.length})\`, 
-            blogs: \`\${t.tabs.blogs} (\${articles.length})\`, 
-            images: \`\${t.tabs.images} (\${imagesWithoutAlt.length})\`,
+            products: `${t.tabs.products} (${products.length})`, 
+            collections: `${t.tabs.collections} (${collections.length})`, 
+            pages: `${t.tabs.pages} (${pages.length})`, 
+            blogs: `${t.tabs.blogs} (${articles.length})`, 
+            images: `${t.tabs.images} (${imagesWithoutAlt.length})`,
             guide: t.tabs.guide 
           };
           return (
@@ -834,7 +834,7 @@ export default function CompleteSEOApp() {
                         </div>
                         <div>
                           <div style={{ fontWeight: "600", fontSize: "14px", marginBottom: "4px" }}>{prod.title}</div>
-                          <div style={{ fontSize: "12px", marginBottom: "2px" }}><a href={\`https://\${shop.myshopifyDomain}/products/\${prod.handle}\`} target="_blank" rel="noopener noreferrer" style={{ color: "#2c6ecb", textDecoration: "none" }}>/products/{prod.handle}</a></div>
+                          <div style={{ fontSize: "12px", marginBottom: "2px" }}><a href={`https://${shop.myshopifyDomain}/products/${prod.handle}`} target="_blank" rel="noopener noreferrer" style={{ color: "#2c6ecb", textDecoration: "none" }}>/products/{prod.handle}</a></div>
                           <div style={{ fontSize: "11px", color: "#8c9196", marginBottom: "6px" }}>ID: {prod.numericId}</div>
                           {renderProductStatus(prod.status)}
                         </div>
@@ -898,7 +898,7 @@ export default function CompleteSEOApp() {
                   <tr key={col.id} style={{ borderBottom: "1px solid #f1f2f4" }}>
                     <td style={{ padding: "12px 16px" }}>
                       <div style={{ fontWeight: "600", fontSize: "14px", marginBottom: "4px" }}>{col.title}</div>
-                      <div style={{ fontSize: "12px", marginBottom: "2px" }}><a href={\`https://\${shop.myshopifyDomain}/collections/\${col.handle}\`} target="_blank" rel="noopener noreferrer" style={{ color: "#2c6ecb", textDecoration: "none" }}>/collections/{col.handle}</a></div>
+                      <div style={{ fontSize: "12px", marginBottom: "2px" }}><a href={`https://${shop.myshopifyDomain}/collections/${col.handle}`} target="_blank" rel="noopener noreferrer" style={{ color: "#2c6ecb", textDecoration: "none" }}>/collections/{col.handle}</a></div>
                       <div style={{ fontSize: "11px", color: "#8c9196" }}>ID: {col.numericId}</div>
                     </td>
                     <td style={{ padding: "12px 16px" }}>{renderScore(col.score, col.isHidden)}</td>
@@ -953,7 +953,7 @@ export default function CompleteSEOApp() {
                   <tr key={pg.id} style={{ borderBottom: "1px solid #f1f2f4" }}>
                     <td style={{ padding: "12px 16px" }}>
                       <div style={{ fontWeight: "600", fontSize: "14px", marginBottom: "4px" }}>{pg.title}</div>
-                      <div style={{ fontSize: "12px", marginBottom: "2px" }}><a href={\`https://\${shop.myshopifyDomain}/pages/\${pg.handle}\`} target="_blank" rel="noopener noreferrer" style={{ color: "#2c6ecb", textDecoration: "none" }}>/pages/{pg.handle}</a></div>
+                      <div style={{ fontSize: "12px", marginBottom: "2px" }}><a href={`https://${shop.myshopifyDomain}/pages/${pg.handle}`} target="_blank" rel="noopener noreferrer" style={{ color: "#2c6ecb", textDecoration: "none" }}>/pages/{pg.handle}</a></div>
                       <div style={{ fontSize: "11px", color: "#8c9196" }}>ID: {pg.numericId}</div>
                     </td>
                     <td style={{ padding: "12px 16px" }}>{renderScore(pg.score, pg.isHidden)}</td>
@@ -1010,7 +1010,7 @@ export default function CompleteSEOApp() {
                     <td style={{ padding: "12px 16px" }}>
                       <div style={{ fontWeight: "600", fontSize: "14px", marginBottom: "4px" }}>{art.title}</div>
                       <div style={{ fontSize: "12px", color: "#6d7175", marginBottom: "2px" }}>{t.misc.by} {art.authorName}</div>
-                      <div style={{ fontSize: "12px", marginBottom: "2px" }}><a href={\`https://\${shop.myshopifyDomain}/blogs/\${art.blogHandle}/\${art.handle}\`} target="_blank" rel="noopener noreferrer" style={{ color: "#2c6ecb", textDecoration: "none" }}>/blogs/{art.blogHandle}/{art.handle}</a></div>
+                      <div style={{ fontSize: "12px", marginBottom: "2px" }}><a href={`https://${shop.myshopifyDomain}/blogs/${art.blogHandle}/${art.handle}`} target="_blank" rel="noopener noreferrer" style={{ color: "#2c6ecb", textDecoration: "none" }}>/blogs/{art.blogHandle}/{art.handle}</a></div>
                       <div style={{ fontSize: "11px", color: "#8c9196" }}>ID: {art.numericId}</div>
                     </td>
                     <td style={{ padding: "12px 16px" }}><span style={{ padding: "3px 8px", backgroundColor: "#f1f2f4", borderRadius: "10px", fontSize: "12px", fontWeight: "600" }}>{art.blogTitle}</span></td>
@@ -1070,7 +1070,7 @@ export default function CompleteSEOApp() {
                         <div>
                           <div style={{ fontWeight: "600", fontSize: "14px", marginBottom: "4px" }}>{img.productTitle}</div>
                           <div style={{ fontSize: "12px" }}>
-                            <a href={\`https://\${shop.myshopifyDomain}/products/\${img.productHandle}\`} target="_blank" rel="noopener noreferrer" style={{ color: "#2c6ecb", textDecoration: "none" }}>{t.misc.viewOriginal}</a>
+                            <a href={`https://${shop.myshopifyDomain}/products/${img.productHandle}`} target="_blank" rel="noopener noreferrer" style={{ color: "#2c6ecb", textDecoration: "none" }}>{t.misc.viewOriginal}</a>
                           </div>
                         </div>
                       </div>
