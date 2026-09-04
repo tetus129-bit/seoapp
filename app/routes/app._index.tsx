@@ -206,82 +206,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
       return { success: true, message: hideAction === "hide" ? "Recurso excluido del Sitemap e indexación (noindex)." : "Recurso incluido en el Sitemap." };
     }
-    if (intent === "toggle_tags_indexing") {
-      const appId = formData.get("appId") as string;
-      const hideAction = formData.get("hideAction") as string;
-      const value = hideAction === "hide" ? "1" : "0";
-      
-      const { session } = await authenticate.admin(request);
-      
-      try {
-        // 1. Save Metafield to AppInstallation
-        const response = await admin.graphql(
-          `#graphql
-          mutation setShopTagsHiddenMetafield($metafields: [MetafieldsSetInput!]!) {
-             metafieldsSet(metafields: $metafields) {
-               userErrors { field message }
-             }
-           }`,
-          { variables: { metafields: [{ ownerId: appId, namespace: "seo", key: "tags_hidden", value: value, type: "number_integer" }] } }
-        );
-        const json = await response.json();
-        const errors = json.data?.metafieldsSet?.userErrors || [];
-        if (errors && errors.length > 0) {
-          return { error: errors[0].message };
-        }
-
-        // 2. Modify theme.liquid via REST
-        const themesRes = await fetch(`https://${session.shop}/admin/api/2024-01/themes.json`, {
-          headers: { "X-Shopify-Access-Token": session.accessToken }
-        });
-        const themesData = await themesRes.json();
-        const mainTheme = themesData.themes?.find((t: any) => t.role === "main");
-        
-        if (mainTheme) {
-          const assetRes = await fetch(`https://${session.shop}/admin/api/2024-01/themes/${mainTheme.id}/assets.json?asset[key]=layout/theme.liquid`, {
-            headers: { "X-Shopify-Access-Token": session.accessToken }
-          });
-          const assetData = await assetRes.json();
-          let themeLiquid = assetData.asset?.value || "";
-
-          const snippet = "\n{% comment %}SEO_PRO_TAGS_HIDDEN{% endcomment %}\n{% if request.page_type == 'collection' and current_tags %}\n<meta name=\"robots\" content=\"noindex, nofollow\">\n{% endif %}\n{% comment %}END_SEO_PRO_TAGS_HIDDEN{% endcomment %}\n";
-          
-          let modified = false;
-          if (hideAction === "hide") {
-            if (!themeLiquid.includes("SEO_PRO_TAGS_HIDDEN")) {
-              themeLiquid = themeLiquid.replace("</head>", snippet + "</head>");
-              modified = true;
-            }
-          } else {
-            if (themeLiquid.includes("SEO_PRO_TAGS_HIDDEN")) {
-              const regex = /\n?\{% comment %\}SEO_PRO_TAGS_HIDDEN\{% endcomment %\}.*?\{% comment %\}END_SEO_PRO_TAGS_HIDDEN\{% endcomment %\}\n?/gs;
-              themeLiquid = themeLiquid.replace(regex, "");
-              modified = true;
-            }
-          }
-
-          if (modified) {
-            await fetch(`https://${session.shop}/admin/api/2024-01/themes/${mainTheme.id}/assets.json`, {
-              method: "PUT",
-              headers: { 
-                "X-Shopify-Access-Token": session.accessToken,
-                "Content-Type": "application/json"
-              },
-              body: JSON.stringify({
-                asset: {
-                  key: "layout/theme.liquid",
-                  value: themeLiquid
-                }
-              })
-            });
-          }
-        }
-      } catch (err: any) {
-        return { error: err.message || "Error al modificar theme.liquid" };
-      }
-      
-      return { success: true, message: hideAction === "hide" ? "Páginas de etiquetas excluidas de Google." : "Páginas de etiquetas permitidas." };
-    }
+    
 
 
     if (intent === "save_canonical_url") {
@@ -404,7 +329,7 @@ const dict = {
     tables: { product: "Producto", collection: "Colección", page: "Página", article: "Artículo", blog: "Blog", imageProduct: "Imagen y Producto", altText: "Texto Alternativo (ALT)", score: "Puntuación", issues: "Problemas Detectados", indexing: "Indexación", canonical: "URL Canonical", actions: "Acciones" },
     refreshMsg: "Si realizaste cambios y no se ven reflejados, presiona F5 o refresca la página.",
     empty: { products: "No hay productos disponibles.", collections: "No hay colecciones disponibles.", pages: "No hay páginas disponibles.", articles: "No hay artículos disponibles.", images: "¡Genial! Todas tus imágenes ya tienen textos alternativos." },
-    tagsView: { title: "Control Global de Etiquetas (Tags)", desc: "Shopify genera dinámicamente URLs para cada etiqueta (ej: /collections/zapatos/rojo). Los motores de búsqueda pueden ver esto como contenido duplicado o de baja calidad. Se recomienda desindexar todas las URLs filtradas por etiquetas para mejorar tu SEO.", statusHidden: "Actualmente, las páginas de etiquetas están excluidas de Google (noindex).", statusVisible: "Actualmente, las páginas de etiquetas son visibles para Google.", note: "Nota: Al excluir las etiquetas, la aplicación inyecta automáticamente una regla segura en el archivo theme.liquid de tu tienda activa.", btnExclude: "Excluir todas las etiquetas (noindex)", btnInclude: "Permitir indexación de etiquetas" },
+    tagsView: { title: "Control Global de Etiquetas (Tags)", desc: "Shopify genera dinámicamente URLs para cada etiqueta (ej: /collections/zapatos/rojo). Los motores de búsqueda pueden ver esto como contenido duplicado o de baja calidad. Se recomienda desindexar todas las URLs filtradas por etiquetas para mejorar tu SEO.", howToTitle: "🛠️ ¿Cómo desindexar las etiquetas?", howToDesc: "Para evitar el contenido duplicado, debes agregar una regla en tu tema que indique a Google que ignore estas páginas. Sigue estos pasos:", step1: "Ve a Tienda Online > Temas > Editar código.", step2: "Abre el archivo layout/theme.liquid.", step3: "Busca la etiqueta <head> y pega el siguiente código justo debajo:" },
     misc: { noImg: "Sin img", by: "Por", viewOriginal: "Ver producto original ↗", altPlaceholder: "Ej: Zapatillas deportivas rojas talla 42...", saving: "Guardando...", saveAlt: "💾 Guardar ALT", active: "● Activo", draft: "○ Borrador", archived: "📦 Archivado", optimized: "✓ Optimizado", hidden: "Oculto (noindex)", inSitemap: "En Sitemap", editSeo: "✏️ Editar SEO", include: "Incluir", exclude: "Excluir", lang: "🌐 Idioma:", na: "N/A", customizeCanonical: "Personalizar canonical", defaultCanonical: "Por defecto", customCanonical: "Personalizada", fix: "Solucionar" },
     guide: { 
       goldenTitle: "Regla de Oro del SEO", goldenDesc: "Evita títulos genéricos. Utiliza siempre: [Producto] + [Material] + [Beneficio o Marca].", 
@@ -454,7 +379,7 @@ const dict = {
     tables: { product: "Product", collection: "Collection", page: "Page", article: "Article", blog: "Blog", imageProduct: "Image and Product", altText: "Alternative Text (ALT)", score: "Score", issues: "Detected Issues", indexing: "Indexing", canonical: "Canonical URL", actions: "Actions" },
     refreshMsg: "If you made changes and they are not reflected, press F5 or refresh the page.",
     empty: { products: "No products available.", collections: "No collections available.", pages: "No pages available.", articles: "No articles available.", images: "Great! All your images already have alternative texts." },
-    tagsView: { title: "Global Tags Control", desc: "Shopify dynamically generates URLs for each tag (e.g., /collections/shoes/red). Search engines may view this as duplicate or low-quality content. We recommend de-indexing all tag-filtered URLs to improve your SEO.", statusHidden: "Currently, tag pages are hidden from Google (noindex).", statusVisible: "Currently, tag pages are visible to Google.", note: "Note: By excluding tags, the app automatically injects a safe rule into your active store's theme.liquid file.", btnExclude: "Exclude all tags (noindex)", btnInclude: "Allow tag indexing" },
+    tagsView: { title: "Global Tags Control", desc: "Shopify dynamically generates URLs for each tag (e.g., /collections/shoes/red). Search engines may view this as duplicate or low-quality content. We recommend de-indexing all tag-filtered URLs to improve your SEO.", howToTitle: "🛠️ How to de-index tags?", howToDesc: "To prevent duplicate content, you must add a rule in your theme that tells Google to ignore these pages. Follow these steps:", step1: "Go to Online Store > Themes > Edit code.", step2: "Open the layout/theme.liquid file.", step3: "Find the <head> tag and paste the following code right below it:" },
     misc: { noImg: "No img", by: "By", viewOriginal: "View original product ↗", altPlaceholder: "E.g: Red sports shoes size 42...", saving: "Saving...", saveAlt: "💾 Save ALT", active: "● Active", draft: "○ Draft", archived: "📦 Archived", optimized: "✓ Optimized", hidden: "Hidden (noindex)", inSitemap: "In Sitemap", editSeo: "✏️ Edit SEO", include: "Include", exclude: "Exclude", lang: "🌐 Language:", na: "N/A", customizeCanonical: "Customize canonical", defaultCanonical: "Default", customCanonical: "Customized", fix: "Fix" },
     guide: { 
       goldenTitle: "Golden Rule of SEO", goldenDesc: "Avoid generic titles. Always use: [Product] + [Material] + [Benefit or Brand].", 
@@ -504,7 +429,7 @@ const dict = {
     tables: { product: "Produto", collection: "Coleção", page: "Página", article: "Artigo", blog: "Blog", imageProduct: "Imagem e Produto", altText: "Texto Alternativo (ALT)", score: "Pontuação", issues: "Problemas Detectados", indexing: "Indexação", canonical: "URL Canônica", actions: "Ações" },
     refreshMsg: "Se você fez alterações e elas não refletirem, pressione F5 ou atualize a página.",
     empty: { products: "Nenhum produto disponível.", collections: "Nenhuma coleção disponível.", pages: "Nenhuma página disponível.", articles: "Nenhum artigo disponível.", images: "Ótimo! Todas as suas imagens já têm textos alternativos." },
-    tagsView: { title: "Controle Global de Tags", desc: "A Shopify gera URLs dinamicamente para cada tag (ex: /collections/sapatos/vermelho). Os motores de busca podem ver isso como conteúdo duplicado ou de baixa qualidade. Recomendamos desindexar todas as URLs filtradas por tags para melhorar seu SEO.", statusHidden: "Atualmente, as páginas de tags estão ocultas do Google (noindex).", statusVisible: "Atualmente, as páginas de tags são visíveis para o Google.", note: "Nota: Ao excluir as tags, o aplicativo injeta automaticamente uma regra segura no arquivo theme.liquid da sua loja ativa.", btnExclude: "Excluir todas as tags (noindex)", btnInclude: "Permitir indexação de tags" },
+    tagsView: { title: "Controle Global de Tags", desc: "A Shopify gera URLs dinamicamente para cada tag (ex: /collections/sapatos/vermelho). Os motores de busca podem ver isso como conteúdo duplicado ou de baixa qualidade. Recomendamos desindexar todas as URLs filtradas por tags para melhorar seu SEO.", howToTitle: "🛠️ Como desindexar as tags?", howToDesc: "Para evitar conteúdo duplicado, você deve adicionar uma regra no seu tema que diga ao Google para ignorar essas páginas. Siga estes passos:", step1: "Vá em Loja Virtual > Temas > Editar código.", step2: "Abra o arquivo layout/theme.liquid.", step3: "Encontre a tag <head> e cole o seguinte código logo abaixo dela:" },
     misc: { noImg: "Sem img", by: "Por", viewOriginal: "Ver produto original ↗", altPlaceholder: "Ex: Tênis esportivo vermelho tamanho 42...", saving: "Salvando...", saveAlt: "💾 Salvar ALT", active: "● Ativo", draft: "○ Rascunho", archived: "📦 Arquivado", optimized: "✓ Otimizado", hidden: "Oculto (noindex)", inSitemap: "No Sitemap", editSeo: "✏️ Editar SEO", include: "Incluir", exclude: "Excluir", lang: "🌐 Idioma:", na: "N/A", customizeCanonical: "Personalizar canonical", defaultCanonical: "Padrão", customCanonical: "Personalizada", fix: "Corrigir" },
     guide: { 
       goldenTitle: "Regra de Ouro do SEO", goldenDesc: "Evite títulos genéricos. Use sempre: [Produto] + [Material] + [Benefício ou Marca].", 
@@ -1177,41 +1102,23 @@ export default function CompleteSEOApp() {
             {t.tagsView.desc}
           </div>
 
-          <div style={{ backgroundColor: shop.tagsHidden ? "#e3f1df" : "#fef3d6", padding: "16px", borderRadius: "8px", border: "1px solid " + (shop.tagsHidden ? "#aee9d1" : "#ffe8a1"), marginBottom: "24px", display: "flex", alignItems: "center", gap: "12px" }}>
-            <div style={{ fontSize: "24px" }}>{shop.tagsHidden ? "🛡️" : "⚠️"}</div>
-            <div style={{ fontSize: "14px", fontWeight: "500", color: shop.tagsHidden ? "#108043" : "#8a6100" }}>
-              {shop.tagsHidden ? t.tagsView.statusHidden : t.tagsView.statusVisible}
+          <div style={{ marginBottom: "24px" }}>
+            <h3 style={{ fontSize: "16px", fontWeight: "600", color: "#202223", marginBottom: "12px" }}>{t.tagsView.howToTitle}</h3>
+            <p style={{ fontSize: "14px", color: "#4d5156", marginBottom: "16px" }}>{t.tagsView.howToDesc}</p>
+            <ol style={{ fontSize: "14px", color: "#4d5156", paddingLeft: "24px", marginBottom: "20px", lineHeight: "1.8" }}>
+              <li><b>{t.tagsView.step1}</b></li>
+              <li>{t.tagsView.step2}</li>
+              <li>{t.tagsView.step3}</li>
+            </ol>
+            <div style={{ position: "relative" }}>
+              <pre style={{ backgroundColor: "#000000", color: "#f8f8f8", padding: "16px", borderRadius: "8px", fontSize: "13px", overflowX: "auto", margin: 0 }}>
+                <code>
+{`{% if request.page_type == 'collection' and current_tags %}
+  <meta name="robots" content="noindex, nofollow">
+{% endif %}`}
+                </code>
+              </pre>
             </div>
-          </div>
-
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", borderTop: "1px solid #e1e3e5", paddingTop: "24px" }}>
-            <button
-              type="button"
-              disabled={isSubmitting}
-              onClick={() => {
-                executeApiCall({ intent: "toggle_tags_indexing", appId: shop.appId, hideAction: shop.tagsHidden ? "show" : "hide" });
-              }}
-              style={{
-                padding: "10px 20px",
-                borderRadius: "6px",
-                border: shop.tagsHidden ? "1px solid #c9cccf" : "none",
-                backgroundColor: shop.tagsHidden ? "#ffffff" : "#d82c0d",
-                color: shop.tagsHidden ? "#202223" : "#ffffff",
-                fontWeight: "600",
-                cursor: isSubmitting ? "not-allowed" : "pointer",
-                fontSize: "14px",
-                fontFamily: "inherit",
-                display: "flex",
-                alignItems: "center",
-                gap: "8px"
-              }}
-            >
-              {shop.tagsHidden ? t.tagsView.btnInclude : t.tagsView.btnExclude}
-            </button>
-          </div>
-          
-          <div style={{ marginTop: "16px", fontSize: "12px", color: "#8c9196", textAlign: "right" }}>
-            {t.tagsView.note}
           </div>
         </div>
       )}
