@@ -561,7 +561,23 @@ export default function CompleteSEOApp() {
         : { type: "success" as const, message: t.feedback[actionData.message as keyof typeof t.feedback] || actionData.message }) 
     : null;
 
-  const [activeTab, setActiveTab] = useState<"products" | "collections" | "pages" | "blogs" | "images" | "guide">("products");
+  const [activeTab, setActiveTabState] = useState<"products" | "collections" | "pages" | "blogs" | "images" | "guide">("products");
+
+  useEffect(() => {
+    try {
+      const savedTab = sessionStorage.getItem("seo_pro_active_tab");
+      if (savedTab) {
+        setActiveTabState(savedTab as any);
+      }
+    } catch (e) {}
+  }, []);
+
+  const setActiveTab = (tab: "products" | "collections" | "pages" | "blogs" | "images" | "guide") => {
+    setActiveTabState(tab);
+    try {
+      sessionStorage.setItem("seo_pro_active_tab", tab);
+    } catch (e) {}
+  };
   
   const [editingItem, setEditingItem] = useState<{
     id: string;
@@ -599,7 +615,26 @@ export default function CompleteSEOApp() {
   const [previewDevice, setPreviewDevice] = useState<"desktop" | "mobile">("desktop");
   const [imageAlts, setImageAlts] = useState<Record<string, string>>({});
 
-  const [currentPage, setCurrentPage] = useState(1);
+  const [currentPage, setCurrentPageState] = useState(1);
+
+  useEffect(() => {
+    try {
+      const savedPage = sessionStorage.getItem("seo_pro_current_page");
+      if (savedPage) {
+        setCurrentPageState(parseInt(savedPage, 10));
+      }
+    } catch (e) {}
+  }, []);
+
+  const setCurrentPage = (page: number | ((prev: number) => number)) => {
+    setCurrentPageState((prev) => {
+      const newPage = typeof page === "function" ? page(prev) : page;
+      try {
+        sessionStorage.setItem("seo_pro_current_page", newPage.toString());
+      } catch (e) {}
+      return newPage;
+    });
+  };
   const ITEMS_PER_PAGE = 100;
 
   const getPaginatedData = (data: any[]) => {
