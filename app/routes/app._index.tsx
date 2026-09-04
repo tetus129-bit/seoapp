@@ -346,6 +346,7 @@ const dict = {
     permErrorDetails: "Ver detalles técnicos del error",
     tabs: { products: "📦 Productos", collections: "📂 Colecciones", pages: "📄 Páginas", blogs: "📝 Blog", images: "🖼️ Imágenes (ALT)", guide: "📚 Guía SEO", tags: "🏷️ Etiquetas" },
     tables: { product: "Producto", collection: "Colección", page: "Página", article: "Artículo", blog: "Blog", imageProduct: "Imagen y Producto", altText: "Texto Alternativo (ALT)", score: "Puntuación", issues: "Problemas Detectados", indexing: "Indexación", canonical: "URL Canonical", actions: "Acciones" },
+    refreshMsg: "Si realizaste cambios y no se ven reflejados, presiona F5 o refresca la página.",
     empty: { products: "No hay productos disponibles.", collections: "No hay colecciones disponibles.", pages: "No hay páginas disponibles.", articles: "No hay artículos disponibles.", images: "¡Genial! Todas tus imágenes ya tienen textos alternativos." },
     tagsView: { title: "Control Global de Etiquetas (Tags)", desc: "Shopify genera dinámicamente URLs para cada etiqueta (ej: /collections/zapatos/rojo). Los motores de búsqueda pueden ver esto como contenido duplicado o de baja calidad. Se recomienda desindexar todas las URLs filtradas por etiquetas para mejorar tu SEO.", statusHidden: "Actualmente, las páginas de etiquetas están excluidas de Google (noindex).", statusVisible: "Actualmente, las páginas de etiquetas son visibles para Google.", note: "Nota: Al excluir las etiquetas, la aplicación inyecta automáticamente una regla segura en el archivo theme.liquid de tu tienda activa.", btnExclude: "Excluir todas las etiquetas (noindex)", btnInclude: "Permitir indexación de etiquetas" },
     misc: { noImg: "Sin img", by: "Por", viewOriginal: "Ver producto original ↗", altPlaceholder: "Ej: Zapatillas deportivas rojas talla 42...", saving: "Guardando...", saveAlt: "💾 Guardar ALT", active: "● Activo", draft: "○ Borrador", archived: "📦 Archivado", optimized: "✓ Optimizado", hidden: "Oculto (noindex)", inSitemap: "En Sitemap", editSeo: "✏️ Editar SEO", include: "Incluir", exclude: "Excluir", lang: "🌐 Idioma:", na: "N/A", customizeCanonical: "Personalizar canonical", defaultCanonical: "Por defecto", customCanonical: "Personalizada", fix: "Solucionar" },
@@ -395,6 +396,7 @@ const dict = {
     permErrorDetails: "View technical error details",
     tabs: { products: "📦 Products", collections: "📂 Collections", pages: "📄 Pages", blogs: "📝 Blog", images: "🖼️ Images (ALT)", guide: "📚 SEO Guide", tags: "🏷️ Tags" },
     tables: { product: "Product", collection: "Collection", page: "Page", article: "Article", blog: "Blog", imageProduct: "Image and Product", altText: "Alternative Text (ALT)", score: "Score", issues: "Detected Issues", indexing: "Indexing", canonical: "Canonical URL", actions: "Actions" },
+    refreshMsg: "If you made changes and they are not reflected, press F5 or refresh the page.",
     empty: { products: "No products available.", collections: "No collections available.", pages: "No pages available.", articles: "No articles available.", images: "Great! All your images already have alternative texts." },
     tagsView: { title: "Global Tags Control", desc: "Shopify dynamically generates URLs for each tag (e.g., /collections/shoes/red). Search engines may view this as duplicate or low-quality content. We recommend de-indexing all tag-filtered URLs to improve your SEO.", statusHidden: "Currently, tag pages are hidden from Google (noindex).", statusVisible: "Currently, tag pages are visible to Google.", note: "Note: By excluding tags, the app automatically injects a safe rule into your active store's theme.liquid file.", btnExclude: "Exclude all tags (noindex)", btnInclude: "Allow tag indexing" },
     misc: { noImg: "No img", by: "By", viewOriginal: "View original product ↗", altPlaceholder: "E.g: Red sports shoes size 42...", saving: "Saving...", saveAlt: "💾 Save ALT", active: "● Active", draft: "○ Draft", archived: "📦 Archived", optimized: "✓ Optimized", hidden: "Hidden (noindex)", inSitemap: "In Sitemap", editSeo: "✏️ Edit SEO", include: "Include", exclude: "Exclude", lang: "🌐 Language:", na: "N/A", customizeCanonical: "Customize canonical", defaultCanonical: "Default", customCanonical: "Customized", fix: "Fix" },
@@ -402,7 +404,7 @@ const dict = {
       goldenTitle: "Golden Rule of SEO", goldenDesc: "Avoid generic titles. Always use: [Product] + [Material] + [Benefit or Brand].", 
       howTo: "📖 How to use this application", 
       scoreTitle: "🎯 SEO Score (0 to 100)", scoreDesc: "The application automatically analyzes your SEO titles and descriptions. It penalizes titles that are too short (<30 characters) or too long (>60 characters), as well as descriptions that are very short (<70) or very long (>160). In addition, it reduces the score if it detects images lacking alternative text (ALT).", 
-      editTitle: "✏️ Quick Editing with Preview", editDesc: "By pressing the \"Edit SEO\" button, a panel will open where you can modify the Title and Meta Description of any product, collection, page, or blog article. As you type, you will see a real-time simulation of how your result would appear in Google searches, on both mobile and desktop versions.", 
+      editTitle: "🏷️ Tags Control", editDesc: "Tags generate dynamic URLs that can cause duplicate content issues in search engines. Use the Tags tab to globally de-index all these pages from Google with a single click and protect your store's authority and cleanliness.", 
       indexTitle: "👁️ Indexing Control (Hide from Sitemap)", indexDesc: "If you have products or pages that you do not want to appear on Google (e.g., thank you pages or exclusive products), you can use the \"Exclude\" button. This adds a rule (seo.hidden metafield) that tells Shopify to remove that resource from your sitemap.xml file and adds the noindex tag so search engines ignore it.", 
       imgTitle: "🖼️ Image Optimization (ALT)", imgDesc: "In the \"Images (ALT)\" tab, the app filters and shows you only the product photos that currently have no alternative text. You can see a small thumbnail of the image and quickly write its description. Upon saving, the image will disappear from the list, helping you improve your ranking in Google Images.", 
       canonicalTitle: "🔗 How to enable custom Canonical URLs?", canonicalDesc: "Shopify does not automatically update the canonical tag in your store's source code just by using the App. For it to work and for Google to detect it, you must go to <b>Online Store > Themes > Edit code</b>, open the <code>theme.liquid</code> file and replace the original <code>&lt;link rel=\"canonical\" href=\"{{ canonical_url }}\"&gt;</code> tag with the following safe code:",
@@ -444,6 +446,7 @@ const dict = {
     permErrorDetails: "Ver detalhes técnicos do erro",
     tabs: { products: "📦 Produtos", collections: "📂 Coleções", pages: "📄 Páginas", blogs: "📝 Blog", images: "🖼️ Imagens (ALT)", guide: "📚 Guia SEO", tags: "🏷️ Tags" },
     tables: { product: "Produto", collection: "Coleção", page: "Página", article: "Artigo", blog: "Blog", imageProduct: "Imagem e Produto", altText: "Texto Alternativo (ALT)", score: "Pontuação", issues: "Problemas Detectados", indexing: "Indexação", canonical: "URL Canônica", actions: "Ações" },
+    refreshMsg: "Se você fez alterações e elas não refletirem, pressione F5 ou atualize a página.",
     empty: { products: "Nenhum produto disponível.", collections: "Nenhuma coleção disponível.", pages: "Nenhuma página disponível.", articles: "Nenhum artigo disponível.", images: "Ótimo! Todas as suas imagens já têm textos alternativos." },
     tagsView: { title: "Controle Global de Tags", desc: "A Shopify gera URLs dinamicamente para cada tag (ex: /collections/sapatos/vermelho). Os motores de busca podem ver isso como conteúdo duplicado ou de baixa qualidade. Recomendamos desindexar todas as URLs filtradas por tags para melhorar seu SEO.", statusHidden: "Atualmente, as páginas de tags estão ocultas do Google (noindex).", statusVisible: "Atualmente, as páginas de tags são visíveis para o Google.", note: "Nota: Ao excluir as tags, o aplicativo injeta automaticamente uma regra segura no arquivo theme.liquid da sua loja ativa.", btnExclude: "Excluir todas as tags (noindex)", btnInclude: "Permitir indexação de tags" },
     misc: { noImg: "Sem img", by: "Por", viewOriginal: "Ver produto original ↗", altPlaceholder: "Ex: Tênis esportivo vermelho tamanho 42...", saving: "Salvando...", saveAlt: "💾 Salvar ALT", active: "● Ativo", draft: "○ Rascunho", archived: "📦 Arquivado", optimized: "✓ Otimizado", hidden: "Oculto (noindex)", inSitemap: "No Sitemap", editSeo: "✏️ Editar SEO", include: "Incluir", exclude: "Excluir", lang: "🌐 Idioma:", na: "N/A", customizeCanonical: "Personalizar canonical", defaultCanonical: "Padrão", customCanonical: "Personalizada", fix: "Corrigir" },
@@ -451,7 +454,7 @@ const dict = {
       goldenTitle: "Regra de Ouro do SEO", goldenDesc: "Evite títulos genéricos. Use sempre: [Produto] + [Material] + [Benefício ou Marca].", 
       howTo: "📖 Como usar este aplicativo", 
       scoreTitle: "🎯 Pontuação SEO (0 a 100)", scoreDesc: "O aplicativo analisa automaticamente seus títulos e descrições SEO. Ele penaliza títulos muito curtos (<30 caracteres) ou muito longos (>60 caracteres), bem como descrições muito curtas (<70) ou muito longas (>160). Além disso, reduz a pontuação se detectar imagens sem texto alternativo (ALT).", 
-      editTitle: "✏️ Edición Rápida con Visualização", editDesc: "Ao pressionar o botão \"Editar SEO\", será aberto um painel onde você poderá modificar o Título e a Meta Descrição de qualquer produto, coleção, página ou artigo de blog. Enquanto digita, você verá uma simulação em tempo real de como o seu resultado apareceria nas pesquisas do Google, nas versões mobile e desktop.", 
+      editTitle: "🏷️ Controle de Tags", editDesc: "As tags geram URLs dinâmicas que podem causar problemas de conteúdo duplicado nos motores de busca. Use a guia de Tags para desindexar globalmente todas essas páginas do Google com um único clique e proteger a autoridade e limpeza da sua loja.", 
       indexTitle: "👁️ Controle de Indexação (Ocultar do Sitemap)", indexDesc: "Se você tem produtos ou páginas que não quer que apareçam no Google (por exemplo, páginas de agradecimento ou produtos exclusivos), você pode usar o botão \"Excluir\". Isso adiciona uma regra (metafield seo.hidden) que diz ao Shopify para remover esse recurso do seu arquivo sitemap.xml e adiciona a tag noindex para que os motores de busca o ignorem.", 
       imgTitle: "🖼️ Otimização de Imagens (ALT)", imgDesc: "Na guia \"Imagens (ALT)\", o aplicativo filtra e mostra apenas as fotos dos produtos que atualmente não têm texto alternativo. Você pode ver uma pequena miniatura da imagem e escrever rapidamente sua descrição. Ao salvar, a imagem desaparecerá da lista, ajudando você a melhorar sua classificação no Google Imagens.", 
       canonicalTitle: "🔗 Como ativar URLs Canônicas personalizadas?", canonicalDesc: "O Shopify não atualiza automaticamente a tag canônica no código-fonte da sua loja apenas por usar o App. Para que funcione e o Google a detecte, você deve ir em <b>Loja Virtual > Temas > Editar código</b>, abrir o arquivo <code>theme.liquid</code> e substituir a tag original <code>&lt;link rel=\"canonical\" href=\"{{ canonical_url }}\"&gt;</code> pelo seguinte código seguro:",
@@ -540,7 +543,7 @@ export default function CompleteSEOApp() {
     } catch (e) {}
   }, []);
 
-  const setActiveTab = (tab: "products" | "collections" | "pages" | "blogs" | "images" | "guide") => {
+  const setActiveTab = (tab: "products" | "collections" | "pages" | "blogs" | "images" | "guide" | "tags") => {
     setActiveTabState(tab);
     try {
       sessionStorage.setItem("seo_pro_active_tab", tab);
@@ -772,7 +775,8 @@ export default function CompleteSEOApp() {
         </s-card>
         <s-card style={{ flex: "1", padding: "20px", textAlign: "center", backgroundColor: getScoreColor(totalScore) + "10", border: `1px solid ${getScoreColor(totalScore)}40` }}>
           <h2 style={{ fontSize: "14px", fontWeight: "600", margin: "0 0 10px 0", color: "#303030" }}>{t.globalHealth}</h2>
-          <div style={{ fontSize: "42px", fontWeight: "700", color: getScoreColor(totalScore), lineHeight: "1" }}>{totalScore}<span style={{ fontSize: "20px" }}>/100</span></div>
+          <div style={{ fontSize: "42px", fontWeight: "700", color: getScoreColor(totalScore), lineHeight: "1", marginBottom: "8px" }}>{totalScore}<span style={{ fontSize: "20px" }}>/100</span></div>
+          <div style={{ fontSize: "11px", color: "#6d7175", maxWidth: "250px", margin: "0 auto", lineHeight: "1.4" }}>{t.refreshMsg}</div>
         </s-card>
       </div>
 
@@ -802,14 +806,15 @@ export default function CompleteSEOApp() {
 
       {/* Navegación por Pestañas */}
       <div style={{ display: "flex", gap: "10px", marginBottom: "20px", borderBottom: "1px solid #e1e3e5", paddingBottom: "10px", overflowX: "auto" }}>
-        {["products", "collections", "pages", "blogs", "images", "guide"].map((tab) => {
+        {["products", "collections", "pages", "blogs", "images", "tags", "guide"].map((tab) => {
           const labels: Record<string, string> = { 
             products: `${t.tabs.products} (${products.length})`, 
             collections: `${t.tabs.collections} (${collections.length})`, 
             pages: `${t.tabs.pages} (${pages.length})`, 
             blogs: `${t.tabs.blogs} (${articles.length})`, 
             images: `${t.tabs.images} (${imagesWithoutAlt.length})`,
-            guide: t.tabs.guide 
+            guide: t.tabs.guide, 
+            tags: t.tabs.tags 
           };
           return (
             <button key={tab} onClick={() => { setActiveTab(tab as any); setCurrentPage(1); }} style={{ padding: "8px 16px", borderRadius: "8px", border: "none", backgroundColor: activeTab === tab ? "#e1e3e5" : "transparent", fontWeight: activeTab === tab ? "600" : "400", cursor: "pointer", fontSize: "14px", color: "#202223", whiteSpace: "nowrap" }}>
