@@ -531,7 +531,9 @@ export default function CompleteSEOApp() {
     }
   }, [fetcher.data, fetcher.state]);
 
-  const isSubmitting = fetcher.state === "submitting" || fetcher.state === "loading";
+  const revalidator = useRevalidator();
+  const [isSubmittingNative, setIsSubmittingNative] = useState(false);
+  const isSubmitting = fetcher.state === "submitting" || fetcher.state === "loading" || isSubmittingNative;
 
   const [lang, setLang] = useState<"es" | "en" | "pt">("en");
 
@@ -632,19 +634,54 @@ export default function CompleteSEOApp() {
     );
   };
 
-  // FUNCIÓN ROBUSTA (USEFETCHER + TOKEN REFRESH)
+  // FUNCIÓN SÚPER ROBUSTA (REFRESH, HEADER EXPLÍCITO Y AUTO-RELOAD EN FALLO)
+  useEffect(() => {
+    // Keep-alive silencioso: pide un token cada 45 segundos para que nunca expire.
+    const interval = setInterval(() => {
+      if (typeof window !== "undefined" && (window as any).shopify?.idToken) {
+        (window as any).shopify.idToken().catch(() => {});
+      }
+    }, 45000);
+    return () => clearInterval(interval);
+  }, []);
+
   const executeApiCall = async (body: Record<string, string>) => {
     setActionData(null);
+    setIsSubmittingNative(true);
 
     try {
+      let token = "";
       if (typeof window !== "undefined" && (window as any).shopify?.idToken) {
-        await (window as any).shopify.idToken();
+        token = await (window as any).shopify.idToken();
       }
+      
+      const formData = new FormData();
+      Object.entries(body).forEach(([key, value]) => {
+        formData.append(key, value);
+      });
+
+      const url = new URL(window.location.href);
+      url.searchParams.set("_data", "routes/app._index");
+
+      const res = await window.fetch(url.toString(), {
+        method: "POST",
+        body: formData,
+        headers: token ? { "Authorization": `Bearer ${token}` } : {}
+      });
+
+      if (!res.ok) throw new Error("HTTP " + res.status);
+
+      const data = await res.json();
+      setActionData(data);
+      revalidator.revalidate(); 
     } catch (e) {
-      console.warn("No se pudo refrescar el token de Shopify:", e);
+      console.warn("Error crítico de red/token en executeApiCall:", e);
+      // Si el token falló al refrescar y Shopify devolvió el rebote HTML 200, res.json() explotará
+      // o el fetch fallará. En cualquier caso, recargamos el iframe para reparar la sesión.
+      window.location.reload();
+    } finally {
+      setIsSubmittingNative(false);
     }
-    
-    fetcher.submit(body, { method: "POST" });
   };
 
   const handleOpenEditor = (item: any, type: "product" | "collection" | "page" | "article", parentHandle?: string) => {
