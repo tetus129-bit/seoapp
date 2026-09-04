@@ -95,7 +95,15 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         return { id: node.id, numericId: String(node.id.split("/").pop()), title: node.title, handle: node.handle, seoTitle, seoDesc, isHidden, score, issues, defaultCanonical, customCanonical };
       });
     }
-  } catch (err: any) { apiErrors.push("Conexión Productos: " + (err instanceof Response ? `HTTP ${err.status} - Verifica los scopes (permisos) de tu app.` : err.message || String(err))); }
+  } catch (err: any) {
+    let details = err.message || String(err);
+    if (err instanceof Response) {
+      const body = await err.text().catch(() => "");
+      details = `HTTP ${err.status} - ${body.substring(0, 200)}...`;
+    }
+    console.error("Shopify Products API Error:", err);
+    apiErrors.push(`Conexión Productos: ${details}`);
+  }
 
   try {
     const pagesResponse = await admin.graphql(
@@ -123,7 +131,15 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         return { id: node.id, numericId: String(node.id.split("/").pop()), title: node.title, handle: node.handle, seoTitle, seoDesc, isHidden, score, issues, defaultCanonical, customCanonical };
       });
     }
-  } catch (err: any) { apiErrors.push("Conexión Páginas: " + (err instanceof Response ? `HTTP ${err.status} - Verifica los scopes (permisos) de tu app.` : err.message || String(err))); }
+  } catch (err: any) {
+    let details = err.message || String(err);
+    if (err instanceof Response) {
+      const body = await err.text().catch(() => "");
+      details = `HTTP ${err.status} - ${body.substring(0, 200)}...`;
+    }
+    console.error("Shopify Pages API Error:", err);
+    apiErrors.push(`Conexión Páginas: ${details}`);
+  }
 
   try {
     const blogsResponse = await admin.graphql(
@@ -157,7 +173,15 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         });
       });
     }
-  } catch (err: any) { apiErrors.push("Conexión Blog: " + (err instanceof Response ? `HTTP ${err.status} - Verifica los scopes (permisos) de tu app.` : err.message || String(err))); }
+  } catch (err: any) {
+    let details = err.message || String(err);
+    if (err instanceof Response) {
+      const body = await err.text().catch(() => "");
+      details = `HTTP ${err.status} - ${body.substring(0, 200)}...`;
+    }
+    console.error("Shopify Blog API Error:", err);
+    apiErrors.push(`Conexión Blog: ${details}`);
+  }
 
   const allScores = [
     ...products.filter((p) => !p.isHidden).map((p) => p.score),

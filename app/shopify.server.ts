@@ -15,7 +15,13 @@ const shopify = shopifyApp({
   apiKey: process.env.SHOPIFY_API_KEY || "mock",
   apiSecretKey: process.env.SHOPIFY_API_SECRET || "mock",
   apiVersion: ApiVersion.July25,
-  scopes: process.env.SCOPES?.split(",").map((s) => s.trim()) || ["read_products"],
+  scopes: process.env.SCOPES?.split(",").map((s) => s.trim()) || [
+    "write_products",
+    "read_online_store_pages",
+    "write_online_store_pages",
+    "read_content",
+    "write_content"
+  ],
   appUrl: process.env.SHOPIFY_APP_URL || "http://localhost:3000",
   authPathPrefix: "/auth",
   sessionStorage: storage,
