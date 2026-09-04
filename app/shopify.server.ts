@@ -5,16 +5,20 @@ import {
   shopifyApp,
 } from "@shopify/shopify-app-react-router/server";
 import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prisma";
+import { MemorySessionStorage } from "@shopify/shopify-app-session-storage-memory";
 import prisma from "./db.server";
 
+const isDev = process.env.NODE_ENV !== "production" || process.env.DATABASE_URL?.includes("mock");
+const storage = isDev ? new MemorySessionStorage() : new PrismaSessionStorage(prisma);
+
 const shopify = shopifyApp({
-  apiKey: process.env.SHOPIFY_API_KEY,
-  apiSecretKey: process.env.SHOPIFY_API_SECRET || "",
+  apiKey: process.env.SHOPIFY_API_KEY || "mock",
+  apiSecretKey: process.env.SHOPIFY_API_SECRET || "mock",
   apiVersion: ApiVersion.July25,
-  scopes: process.env.SCOPES?.split(",").map((s) => s.trim()),
-  appUrl: process.env.SHOPIFY_APP_URL || "",
+  scopes: process.env.SCOPES?.split(",").map((s) => s.trim()) || ["read_products"],
+  appUrl: process.env.SHOPIFY_APP_URL || "http://localhost:3000",
   authPathPrefix: "/auth",
-  sessionStorage: new PrismaSessionStorage(prisma),
+  sessionStorage: storage,
   distribution: AppDistribution.AppStore,
   isEmbeddedApp: true,
   future: {

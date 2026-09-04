@@ -1,5 +1,5 @@
 import type { LoaderFunctionArgs } from "react-router";
-import { useLoaderData } from "react-router";
+import { useLoaderData, redirect } from "react-router";
 import { login } from "../../shopify.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
@@ -7,7 +7,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const shop = url.searchParams.get("shop");
 
   if (shop) {
-    throw await login(request);
+    throw redirect(`/app?${url.searchParams.toString()}`);
   }
   return { showForm: Boolean(login) };
 };
