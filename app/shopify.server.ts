@@ -16,6 +16,7 @@ const shopify = shopifyApp({
   apiSecretKey: process.env.SHOPIFY_API_SECRET || "mock",
   apiVersion: ApiVersion.July25,
   scopes: [
+    "read_products",
     "write_products",
     "read_online_store_pages",
     "write_online_store_pages",
